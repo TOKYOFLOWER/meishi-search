@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>名刺検索 | 銀座東京フラワー</title>
+<style>
+  :root{
+    --ink:#14342a; --paper:#faf8f3; --text:#20241f; --muted:#6b7269;
+    --accent:#b5552f; --line:#e7e2d6; --tag:#eef1ea; --card:#fff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{margin:0; background:var(--paper); color:var(--text);
+       font-family:-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+       font-size:15px; line-height:1.5;}
+  /* --- ログイン --- */
+  #login{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;}
+  .loginbox{width:100%; max-width:360px; background:#fff; border:1px solid var(--line);
+            border-radius:16px; padding:26px 22px; box-shadow:0 6px 24px rgba(20,52,42,.06);}
+  .brand{font-size:11px; letter-spacing:.18em; color:var(--muted);}
+  .lt{font-size:20px; font-weight:700; color:var(--ink); margin:2px 0 18px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:12px; color:var(--muted); margin-bottom:5px;}
+  .field input{width:100%; padding:12px 14px; font-size:16px; border:1px solid var(--line);
+               border-radius:11px; background:var(--paper); outline:none;}
+  .field input:focus{border-color:var(--ink);}
+  .loginbtn{width:100%; margin-top:6px; padding:13px; border:none; border-radius:12px;
+            background:var(--accent); color:#fff; font-size:15px; font-weight:700;}
+  .loginbtn:disabled{opacity:.55;}
+  .err{color:#b00020; font-size:13px; margin-top:10px; min-height:18px;}
+  .note{font-size:11px; color:var(--muted); margin-top:14px; line-height:1.6;}
+  /* --- 検索 --- */
+  #app{display:none;}
+  header{position:sticky; top:0; z-index:10; background:var(--ink); color:#fff;
+         padding:12px 16px; display:flex; align-items:center; justify-content:space-between;}
+  .htitle{display:flex; align-items:baseline; gap:8px;}
+  .htitle b{font-size:17px;} .total{font-size:12px; opacity:.75;}
+  .logout{background:transparent; border:1px solid rgba(255,255,255,.4); color:#fff;
+          font-size:12px; padding:6px 10px; border-radius:8px;}
+  .panel{padding:12px 16px; background:#fff; border-bottom:1px solid var(--line);}
+  .kw{width:100%; padding:12px 14px; font-size:16px; border:1px solid var(--line);
+      border-radius:12px; background:var(--paper); outline:none;}
+  .kw:focus{border-color:var(--ink);}
+  .selrow{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:10px;}
+  select{width:100%; padding:9px 8px; font-size:13px; border:1px solid var(--line);
+         border-radius:10px; background:var(--paper); color:var(--text);}
+  .chips{display:flex; gap:7px; overflow-x:auto; margin-top:10px; padding-bottom:2px;}
+  .chip{white-space:nowrap; font-size:12.5px; padding:6px 12px; border-radius:999px;
+        border:1px solid var(--line); background:#fff; color:var(--muted);}
+  .chip.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .barbtn{display:flex; gap:8px; margin-top:10px;}
+  .go{flex:1; padding:12px; border:none; border-radius:12px; background:var(--accent);
+      color:#fff; font-size:15px; font-weight:700;}
+  .clear{padding:12px 14px; border:1px solid var(--line); border-radius:12px;
+         background:#fff; color:var(--muted); font-size:13px;}
+  .meta{padding:10px 16px 2px; font-size:12px; color:var(--muted);}
+  .list{padding:6px 12px 90px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px;
+        padding:13px 14px; margin:8px 4px; box-shadow:0 1px 2px rgba(20,52,42,.04);}
+  .name{font-size:16px; font-weight:700;}
+  .co{font-size:13px; margin-top:1px;}
+  .sub{font-size:12px; color:var(--muted); margin-top:1px;}
+  .tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .t{font-size:11px; padding:3px 9px; border-radius:999px; background:var(--tag); color:var(--ink);}
+  .t.role{background:#f3e9e2; color:var(--accent);}
+  .acts{display:flex; gap:8px; margin-top:11px;}
+  .act{flex:1; text-align:center; text-decoration:none; font-size:12.5px; padding:9px 4px;
+       border-radius:10px; border:1px solid var(--line); color:var(--ink); background:#fff;}
+  .act.dim{color:#c2c2bb; border-color:#eee; pointer-events:none;}
+  .empty{padding:48px 24px; text-align:center; color:var(--muted);}
+  .empty b{display:block; color:var(--text); font-size:15px; margin-bottom:6px;}
+  .spin{padding:40px; text-align:center; color:var(--muted); font-size:13px;}
+</style>
+</head>
+<body>
+
+<!-- ===== ログイン画面 ===== -->
+<div id="login">
+  <div class="loginbox">
+    <div class="brand">GINZA TOKYO FLOWER</div>
+    <div class="lt">名刺検索</div>
+    <div class="field">
+      <label>ID</label>
+      <input id="user" type="text" autocomplete="username" enterkeyhint="next">
+    </div>
+    <div class="field">
+      <label>パスワード</label>
+      <input id="pass" type="password" autocomplete="current-password" enterkeyhint="go">
+    </div>
+    <button class="loginbtn" id="loginBtn">ログイン</button>
+    <div class="err" id="loginErr"></div>
+    <div class="note">関係者専用の非公開ページです。検索結果は照合に成功した場合のみ表示されます。</div>
+  </div>
+</div>
+
+<!-- ===== 検索画面 ===== -->
+<div id="app">
+  <header>
+    <div class="htitle"><b>名刺検索</b><span class="total" id="total"></span></div>
+    <button class="logout" id="logout">ログアウト</button>
+  </header>
+  <div class="panel">
+    <input id="kw" class="kw" type="search" placeholder="会社名・氏名・住所で検索" enterkeyhint="search">
+    <div class="selrow">
+      <select id="pref"><option value="">都道府県</option></select>
+      <select id="ind"><option value="">業種</option></select>
+      <select id="role"><option value="">役職</option></select>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="barbtn">
+      <button class="go" id="goBtn">検索</button>
+      <button class="clear" id="clearBtn">クリア</button>
+    </div>
+  </div>
+  <div class="meta" id="metaEl"></div>
+  <div class="list" id="list">
+    <div class="empty"><b>条件を選んで検索</b>会社名・氏名・住所のほか、業種や役職でも絞り込めます。</div>
+  </div>
+</div>
+
+<script>
+  // ▼▼ あなたのGAS Web App URL（/exec） ▼▼
+  var GAS_URL = 'https://script.google.com/macros/s/AKfycbypcs3Kz4DYFcQtLwRxY4bSPM0ZO_6bjpNwCC1cEPWs8hNer1qWKtRVxTWB9j3aQOHz-g/exec';
+
+  var EL = function(id){ return document.getElementById(id); };
+  var state = { pref:'', ind:'', role:'' };
+  var QUICK = [
+    {label:'経営者', role:'経営者'},
+    {label:'🌸 花卉・園芸', ind:'花卉・園芸'},
+    {label:'🛒 EC・通販', ind:'EC・通販'},
+    {label:'🍷 ギフト向け(士業)', ind:'士業'},
+    {label:'東京都', pref:'東京都'}
+  ];
+
+  function getCreds(){
+    try { return JSON.parse(sessionStorage.getItem('meishi_creds')||'null'); } catch(e){ return null; }
+  }
+  function setCreds(c){ sessionStorage.setItem('meishi_creds', JSON.stringify(c)); }
+  function clearCreds(){ sessionStorage.removeItem('meishi_creds'); }
+
+  // API: POST(text/plain)でプリフライト回避。creds同梱。
+  async function api(action, extra){
+    var creds = getCreds() || {};
+    var body = Object.assign({ action:action, user:creds.user, pass:creds.pass }, extra||{});
+    var res = await fetch(GAS_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify(body)
+    });
+    return await res.json();
+  }
+
+  // ---- ログイン ----
+  EL('loginBtn').onclick = doLogin;
+  EL('pass').addEventListener('keyup', function(e){ if(e.key==='Enter') doLogin(); });
+  EL('user').addEventListener('keyup', function(e){ if(e.key==='Enter') EL('pass').focus(); });
+  EL('logout').onclick = function(){ clearCreds(); location.reload(); };
+
+  async function doLogin(){
+    var user = EL('user').value.trim(), pass = EL('pass').value;
+    if(!user || !pass){ EL('loginErr').textContent='IDとパスワードを入力してください'; return; }
+    EL('loginBtn').disabled = true; EL('loginErr').textContent = '確認中…';
+    setCreds({ user:user, pass:pass });
+    try {
+      var r = await api('ping');
+      if(r && r.ok){ EL('loginErr').textContent=''; await enterApp(); }
+      else { clearCreds(); EL('loginErr').textContent='IDまたはパスワードが違います'; }
+    } catch(e){
+      clearCreds(); EL('loginErr').textContent='接続に失敗しました（URL設定/通信をご確認ください）';
+    } finally { EL('loginBtn').disabled = false; }
+  }
+
+  // 自動ログイン(セッションに資格情報があれば)
+  (async function(){
+    if(getCreds()){
+      try { var r = await api('ping'); if(r && r.ok){ await enterApp(); return; } } catch(e){}
+      clearCreds();
+    }
+  })();
+
+  async function enterApp(){
+    EL('login').style.display='none';
+    EL('app').style.display='block';
+    var f = await api('filters');
+    if(!f || !f.ok){ clearCreds(); location.reload(); return; }
+    initFilters(f.data);
+  }
+
+  // ---- フィルタ ----
+  function initFilters(f){
+    EL('total').textContent = '登録 ' + f.total.toLocaleString() + ' 件';
+    fill(EL('pref'), f.prefs, '都道府県');
+    fill(EL('ind'),  f.industries, '業種');
+    fill(EL('role'), f.roles, '役職');
+    renderChips();
+  }
+  function fill(sel, arr, label){
+    sel.innerHTML = '<option value="">'+label+'</option>';
+    arr.forEach(function(o){ var op=document.createElement('option');
+      op.value=o.name; op.textContent=o.name+' ('+o.count+')'; sel.appendChild(op); });
+  }
+  function renderChips(){
+    var box=EL('chips'); box.innerHTML='';
+    QUICK.forEach(function(q){
+      var c=document.createElement('div'); c.className='chip'; c.textContent=q.label;
+      if((q.role&&state.role===q.role)||(q.ind&&state.ind===q.ind)||(q.pref&&state.pref===q.pref)) c.className+=' on';
+      c.onclick=function(){
+        if(q.role) state.role = state.role===q.role?'':q.role;
+        if(q.ind)  state.ind  = state.ind===q.ind?'':q.ind;
+        if(q.pref) state.pref = state.pref===q.pref?'':q.pref;
+        sync(); renderChips(); search();
+      };
+      box.appendChild(c);
+    });
+  }
+  function sync(){ EL('pref').value=state.pref; EL('ind').value=state.ind; EL('role').value=state.role; }
+
+  ['pref','ind','role'].forEach(function(k){
+    EL(k).onchange=function(){ state[k]=this.value; renderChips(); search(); };
+  });
+  EL('goBtn').onclick=search;
+  EL('kw').addEventListener('keyup', function(e){ if(e.key==='Enter') search(); });
+  EL('clearBtn').onclick=function(){
+    EL('kw').value=''; state={pref:'',ind:'',role:''}; sync(); renderChips();
+    EL('metaEl').textContent='';
+    EL('list').innerHTML='<div class="empty"><b>条件を選んで検索</b>会社名・氏名・住所のほか、業種や役職でも絞り込めます。</div>';
+  };
+
+  // ---- 検索 ----
+  async function search(){
+    var q={ keyword:EL('kw').value, pref:state.pref, industry:state.ind, roleLevel:state.role };
+    if(!q.keyword && !q.pref && !q.industry && !q.roleLevel){ EL('metaEl').textContent=''; return; }
+    EL('list').innerHTML='<div class="spin">検索中…</div>';
+    try {
+      var r = await api('search', { q:q });
+      if(!r || !r.ok){ if(r&&r.error==='auth'){ clearCreds(); location.reload(); return; }
+        EL('list').innerHTML='<div class="empty"><b>エラー</b>もう一度お試しください。</div>'; return; }
+      render(r.data);
+    } catch(e){
+      EL('list').innerHTML='<div class="empty"><b>通信エラー</b>電波の良い場所で再度お試しください。</div>';
+    }
+  }
+  function render(res){
+    EL('metaEl').textContent = res.count + ' 件' + (res.limited ? '（上位のみ表示。絞り込んでください）':'');
+    if(!res.count){ EL('list').innerHTML='<div class="empty"><b>該当なし</b>条件を変えてお試しください。</div>'; return; }
+    EL('list').innerHTML = res.items.map(card).join('');
+  }
+  function esc(s){ return String(s||'').replace(/[&<>"]/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m];}); }
+  function card(p){
+    var tel = p.telCompany || p.mobile;
+    var telA = tel ? '<a class="act" href="tel:'+esc(tel.replace(/[^0-9+]/g,''))+'">📞 電話</a>' : '<span class="act dim">📞 電話</span>';
+    var mailA = p.email ? '<a class="act" href="mailto:'+esc(p.email)+'">✉️ メール</a>' : '<span class="act dim">✉️ メール</span>';
+    var mapA = p.address ? '<a class="act" target="_blank" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.address)+'">🗺️ 地図</a>' : '<span class="act dim">🗺️ 地図</span>';
+    var siteA = p.url ? '<a class="act" target="_blank" href="'+esc(p.url)+'">🌐 サイト</a>' : '<span class="act dim">🌐 サイト</span>';
+    var line2 = [p.company, p.dept].filter(Boolean).join(' / ');
+    var line3 = [p.title, p.address].filter(Boolean).join('　');
+    var tags='';
+    if(p.industry) tags+='<span class="t">'+esc(p.industry)+'</span>';
+    if(p.roleLevel && p.roleLevel!=='不明') tags+='<span class="t role">'+esc(p.roleLevel)+'</span>';
+    if(p.exchanged) tags+='<span class="t">交換 '+esc(p.exchanged)+'</span>';
+    return '<div class="card"><div class="name">'+esc(p.name||'(氏名不明)')+'</div>'+
+      (line2?'<div class="co">'+esc(line2)+'</div>':'')+
+      (line3?'<div class="sub">'+esc(line3)+'</div>':'')+
+      '<div class="tags">'+tags+'</div>'+
+      '<div class="acts">'+telA+mailA+mapA+siteA+'</div></div>';
+  }
+</script>
+</body>
+</html>
