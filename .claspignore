@@ -1,0 +1,6 @@
+# clasp push 対象は rootDir(src) のみ。以下は念のため除外。
+**/data/**
+**/*.csv
+**/*.md
+.clasp.json
+.claspignore

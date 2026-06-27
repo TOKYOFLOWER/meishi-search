@@ -1,0 +1,9 @@
+# === 個人情報は絶対にコミットしない ===
+data/
+*.csv
+
+# === clasp / ローカル ===
+.clasp.json
+node_modules/
+.DS_Store
+Thumbs.db
