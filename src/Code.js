@@ -52,6 +52,8 @@ function doPost(e) {
       out = { ok: true, data: getFilters() };
     } else if (body.action === 'search') {
       out = { ok: true, data: searchCards(body.q || {}) };
+    } else if (body.action === 'addCard') {
+      out = addCardToSheet(body.card || {});
     } else {
       out = { ok: false, error: 'unknown_action' };
     }
@@ -210,6 +212,164 @@ function importEightCsv(fileId) {
   }
   if (append.length) sh.getRange(sh.getLastRow() + 1, 1, append.length, append[0].length).setValues(append);
   return append.length;
+}
+
+/* === 名刺スキャン取込 (addCard) === */
+// 正規化キー: 空白(半角/全角)除去 → 全角記号/英数を半角化 → 小文字化
+function normKey_() {
+  var s = '';
+  for (var i = 0; i < arguments.length; i++) s += String(arguments[i] || '');
+  s = s.replace(/[\s　]+/g, '');
+  s = s.replace(/[！-～]/g, function (ch) {
+    return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+  });
+  return s.toLowerCase();
+}
+
+function addCardToSheet(card) {
+  card = card || {};
+  var company = String(card.company || '').trim();
+  var name = String(card.name || '').trim();
+  var kana = String(card.kana || '').trim();
+  var department = String(card.department || '').trim();
+  var title = String(card.title || '').trim();
+  var email = String(card.email || '').trim();
+  var tel = String(card.tel || '').trim();
+  var mobile = String(card.mobile || '').trim();
+  var fax = String(card.fax || '').trim();
+  var postal = String(card.postal || '').trim();
+  var address = String(card.address || '').trim();
+  var url = String(card.url || '').trim();
+  var memo = String(card.memo || '').trim();
+  var sourceFile = String(card.source_file || '').trim();
+  var scannedAt = String(card.scanned_at || '').trim();
+
+  if (!company || !name) return { ok: false, error: 'missing_required' }; // どちらかが空なら拒否
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sh = ensureSheet_();
+    var d = readAll_();
+    var header = d.header;
+    var c = colIndex_(header);
+
+    // 姓/名の分割（全角/半角スペース区切り。無ければ姓=name,名=''）
+    var nameParts = name.split(/[\s　]+/).filter(function (x) { return x !== ''; });
+    var sei = nameParts.length ? nameParts[0] : '';
+    var mei = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+    // 重複判定: 既存行の(会社名+姓+名) と (会社名+氏名) の両方のキーを集め、
+    // 新規カードの(会社名+姓+名) / (会社名+name) のいずれかと一致すれば重複
+    var existingKeys = {};
+    d.rows.forEach(function (r, idx) {
+      var exCompany = r[c['会社名']];
+      var exSei = r[c['姓']];
+      var exMei = r[c['名']];
+      var exName = r[c['氏名']];
+      var kA = normKey_(exCompany, exSei, exMei);
+      var kB = normKey_(exCompany, exName);
+      if (kA && existingKeys[kA] === undefined) existingKeys[kA] = idx;
+      if (kB && existingKeys[kB] === undefined) existingKeys[kB] = idx;
+    });
+    var newKeyA = normKey_(company, sei, mei);
+    var newKeyB = normKey_(company, name);
+    var dupIdx = existingKeys[newKeyA];
+    if (dupIdx === undefined) dupIdx = existingKeys[newKeyB];
+    if (dupIdx !== undefined) {
+      return { ok: true, duplicate: true, row: dupIdx + 2 };
+    }
+
+    // id発番: importEightCsv と同じ方式（既存最大 M番号+1）
+    var lastNum = 0;
+    d.rows.forEach(function (r) {
+      var m = String(r[c['id']]).match(/^M(\d+)$/);
+      if (m) lastNum = Math.max(lastNum, parseInt(m[1], 10));
+    });
+    var newId = 'M' + ('00000' + (lastNum + 1)).slice(-5);
+
+    var pc = splitAddr_(address);
+    var rl = roleLevel_(title);
+    var ind = industry_(company + ' ' + department + ' ' + title + ' ' + url);
+    var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    var exchanged = scannedAt ? scannedAt.slice(0, 10) : today;
+
+    var record = {
+      'id': newId,
+      '会社名': company,
+      '部署名': department,
+      '役職': title,
+      '役職レベル': rl,
+      '氏名': name,
+      '姓': sei,
+      '名': mei,
+      '業種': ind,
+      'メール': email,
+      '郵便番号': postal,
+      '都道府県': pc[0],
+      '市区町村': pc[1],
+      '住所': address,
+      '会社TEL': tel,
+      '携帯': mobile,
+      'Fax': fax,
+      'URL': url,
+      '名刺交換日': exchanged,
+      '取込日': today
+    };
+
+    // 備考列: 実シートのヘッダに無ければ末尾に列を追加
+    var BIKO = '備考';
+    if (c[BIKO] === undefined) {
+      sh.getRange(1, header.length + 1).setValue(BIKO);
+      header = header.slice();
+      header.push(BIKO);
+    }
+    var bikoVal = 'scan:' + sourceFile;
+    if (memo) bikoVal += ' / ' + memo;
+    if (kana) bikoVal += ' / かな:' + kana;
+    record[BIKO] = bikoVal;
+
+    var row = header.map(function (h) {
+      var key = String(h).trim();
+      return record.hasOwnProperty(key) ? record[key] : '';
+    });
+
+    var newRowNum = sh.getLastRow() + 1;
+    sh.getRange(newRowNum, 1, 1, row.length).setValues([row]);
+
+    return { ok: true, duplicate: false, row: newRowNum, id: newId };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 手動テスト用（GASエディタから実行）: ダミーカードを1件追加し、追加できたら削除する
+function test_addCard_() {
+  var card = {
+    company: 'テスト株式会社',
+    name: '取込 太郎',
+    kana: 'トリコミ タロウ',
+    department: '営業部',
+    title: '営業部長',
+    email: 'test@example.com',
+    tel: '03-0000-0000',
+    mobile: '090-0000-0000',
+    fax: '',
+    postal: '104-0061',
+    address: '東京都中央区銀座1-1-1',
+    url: 'https://example.com',
+    memo: 'テスト用メモ',
+    source_file: '_test.png',
+    scanned_at: Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd')
+  };
+  var res = addCardToSheet(card);
+  Logger.log(JSON.stringify(res));
+  if (res.ok && !res.duplicate) {
+    getSheet_().deleteRow(res.row);
+    Logger.log('削除: row ' + res.row);
+  } else if (res.ok && res.duplicate) {
+    Logger.log('重複として検出されました（row ' + res.row + '）。削除は行いません。');
+  }
 }
 
 // ====== 派生ロジック ======

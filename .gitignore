@@ -7,3 +7,14 @@ data/
 node_modules/
 .DS_Store
 Thumbs.db
+
+# === 名刺取込(ingest) ― 秘密情報・状態・スキャン画像 ===
+ingest/.env
+ingest/state.json
+ingest/logs/
+ingest/.venv/
+backup/
+*.jpg
+*.jpeg
+*.png
+*.pdf
