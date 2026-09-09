@@ -544,6 +544,7 @@ def process_file(
     card = {key: str(parsed.get(key) or "") for key in CARD_KEYS}
     card["source_file"] = path.name
     card["scanned_at"] = scanned_at
+    card["batch_id"] = "scan-" + now.strftime("%Y%m%d")
 
     if dry_run:
         print(json.dumps(parsed, ensure_ascii=False, indent=2))

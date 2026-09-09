@@ -58,7 +58,7 @@
   .list{padding:6px 12px 90px;}
   .card{background:var(--card); border:1px solid var(--line); border-radius:14px;
         padding:13px 14px; margin:8px 4px; box-shadow:0 1px 2px rgba(20,52,42,.04);}
-  .name{font-size:16px; font-weight:700;}
+  .name{font-size:16px; font-weight:700; cursor:pointer;}
   .co{font-size:13px; margin-top:1px;}
   .sub{font-size:12px; color:var(--muted); margin-top:1px;}
   .tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
@@ -71,6 +71,165 @@
   .empty{padding:48px 24px; text-align:center; color:var(--muted);}
   .empty b{display:block; color:var(--text); font-size:15px; margin-bottom:6px;}
   .spin{padding:40px; text-align:center; color:var(--muted); font-size:13px;}
+
+  /* --- 共通: 戻る/トースト/モーダル/バッジ --- */
+  .backbtn{background:transparent; border:none; color:#fff; font-size:19px; padding:0 2px 0 0;
+           margin-right:2px; cursor:pointer; line-height:1;}
+  #toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(10px);
+         background:var(--ink); color:#fff; padding:10px 18px; border-radius:999px; font-size:13px;
+         opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; z-index:200;
+         max-width:88vw; text-align:center;}
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .modalbg{position:fixed; inset:0; background:rgba(20,52,42,.45); display:flex;
+           align-items:flex-end; justify-content:center; z-index:150;}
+  .modalbox{background:#fff; width:100%; max-width:480px; border-radius:16px 16px 0 0;
+            padding:18px 16px 22px; max-height:88vh; overflow-y:auto;}
+  @media(min-width:520px){ .modalbg{align-items:center;} .modalbox{border-radius:16px;} }
+  .modaltitle{font-size:16px; font-weight:700; color:var(--ink); margin-bottom:12px;}
+  .badge{font-size:11px; padding:3px 8px; border-radius:999px; background:var(--tag); color:var(--ink);}
+  .badge.done{background:#e2efe6; color:#1f7a4c;}
+  .badge.dim{background:#f1efe8; color:var(--muted);}
+
+  /* --- ホーム 入口カード --- */
+  .entries{display:flex; gap:8px; padding:12px 16px 0;}
+  .entry{flex:1; background:#fff; border:1px solid var(--line); border-radius:14px;
+         padding:12px 10px; text-align:center; cursor:pointer;}
+  .entry b{display:block; font-size:20px; color:var(--ink);}
+  .entry span{font-size:11px; color:var(--muted);}
+
+  /* --- イベントチップ・詳細検索 --- */
+  .evchips{display:flex; gap:7px; overflow-x:auto; margin-top:10px; padding-bottom:2px;}
+  .evchip{white-space:nowrap; font-size:12px; padding:6px 12px; border-radius:999px;
+          border:1px solid var(--line); background:var(--paper); color:var(--muted); cursor:pointer;}
+  .evchip.on{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .fieldrow{margin-top:8px;}
+  .fieldrow input[type=text],.fieldrow input[type=date]{width:100%; padding:9px 10px; font-size:13.5px;
+      border:1px solid var(--line); border-radius:10px; background:var(--paper);}
+  .details-toggle{margin-top:8px; font-size:12px; color:var(--muted); background:none; border:none;
+                   text-decoration:underline; padding:2px 0; cursor:pointer;}
+  .daterow{display:flex; gap:8px; margin-top:8px;}
+  .daterow input{flex:1; padding:9px 10px; font-size:13.5px; border:1px solid var(--line);
+                 border-radius:10px; background:var(--paper);}
+
+  /* --- 新着名刺 --- */
+  .newbar{padding:12px 16px; background:#fff; border-bottom:1px solid var(--line);}
+  .togglerow{display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; color:var(--muted);}
+  .heading{padding:12px 16px 4px; font-size:15px; font-weight:700; color:var(--ink);}
+  .sessionbar{padding:0 16px 10px; display:flex; gap:8px;}
+  .sessionbar .fieldrow{flex:1; margin-top:0;}
+  .sessionbar label{display:block; font-size:11px; color:var(--muted); margin-bottom:4px;}
+  .actrow{display:flex; gap:8px; padding:4px 16px 10px;}
+  .actrow button{flex:1; padding:11px; border-radius:12px; font-size:13.5px; font-weight:700;
+                 border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .actrow button.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .newlist{padding:6px 12px 90px;}
+  .newrow{background:#fff; border:1px solid var(--line); border-radius:12px; padding:11px 12px;
+          margin:7px 4px; display:flex; gap:10px; align-items:flex-start; cursor:pointer;}
+  .newrow .chk{margin-top:3px;}
+  .newrow .body{flex:1; min-width:0;}
+  .newrow .name2{font-size:14.5px; font-weight:700;}
+  .newrow .sub2{font-size:12px; color:var(--muted); margin-top:2px;}
+  .newrow .badges{display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;}
+  .newrow .snslink{font-size:11px; color:var(--accent); text-decoration:none; white-space:nowrap; padding-top:3px;}
+
+  /* --- 一括設定モーダル --- */
+  .radiorow{display:flex; flex-direction:column; gap:8px; margin-top:6px;}
+  .radiorow label{display:flex; gap:8px; align-items:flex-start; font-size:13.5px;}
+  .previewbox{margin-top:12px; padding:10px 12px; background:var(--tag); border-radius:10px;
+              font-size:13px; color:var(--ink); min-height:20px;}
+  .confirmbox{margin-top:10px; padding:10px 12px; background:#fdf3ea; border:1px solid #f0dcc4;
+              border-radius:10px; font-size:13px;}
+  .confirmbox .row2{display:flex; gap:8px; margin-top:8px;}
+  .confirmbox .row2 button{flex:1; padding:9px; border-radius:10px; border:1px solid var(--line); background:#fff;}
+  .confirmbox .row2 button.danger{background:var(--accent); color:#fff; border-color:var(--accent);}
+
+  /* --- 整理モード --- */
+  .reviewhead{padding:12px 16px 0; font-size:13px; color:var(--muted);}
+  .personhead{padding:10px 16px 12px; border-bottom:1px solid var(--line); background:#fff;}
+  .personhead .name3{font-size:18px; font-weight:700; color:var(--ink);}
+  .personhead .sub3{font-size:13px; color:var(--muted); margin-top:2px;}
+  .reviewbody{padding:0;}
+  .reviewnav{display:flex; flex-wrap:wrap; gap:8px; padding:10px 16px 24px; position:sticky; bottom:0;
+             background:var(--paper);}
+  .reviewnav button{flex:1 1 40%; padding:12px; border-radius:12px; font-size:13px; font-weight:700;
+                     border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .reviewnav button.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .donebox{padding:60px 24px; text-align:center; color:var(--muted);}
+  .donebox b{display:block; color:var(--text); font-size:16px; margin-bottom:14px;}
+  .donebox button{padding:12px 20px; border-radius:12px; border:none; background:var(--accent);
+                   color:#fff; font-weight:700;}
+
+  /* --- CRMフォーム共通 --- */
+  .crmform{padding:14px 16px 6px; background:#fff;}
+  .fgroup{margin-bottom:14px;}
+  .fgroup>label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px;}
+  .chipwrap{display:flex; flex-wrap:wrap; gap:7px;}
+  .chipwrap .chip{cursor:pointer;}
+  .tagaddrow{display:flex; gap:8px; margin-top:8px;}
+  .tagaddrow input{flex:1; padding:8px 10px; font-size:13px; border:1px solid var(--line);
+                    border-radius:10px; background:var(--paper);}
+  .tagaddrow button{padding:8px 12px; border-radius:10px; border:1px solid var(--line);
+                     background:#fff; font-size:12.5px;}
+  .fgroup input[type=text],.fgroup input[type=date]{width:100%; padding:10px 12px; font-size:14px;
+      border:1px solid var(--line); border-radius:10px; background:var(--paper);}
+  .fgroup textarea{width:100%; padding:10px 12px; font-size:14px; border:1px solid var(--line);
+                    border-radius:10px; background:var(--paper); font-family:inherit; resize:vertical;}
+  details.fgroup summary{cursor:pointer; font-size:12.5px; color:var(--muted); margin-bottom:8px;}
+  .formsave{display:flex; gap:8px; padding:4px 16px 16px; background:#fff;}
+  .formsave button{flex:1; padding:12px; border-radius:12px; font-size:14px; font-weight:700;
+                    border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .formsave button.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+
+  /* --- 人物詳細 --- */
+  .infoblock{background:#fff; padding:14px 16px; border-bottom:1px solid var(--line);}
+  .infoblock .row{font-size:13.5px; margin:3px 0; color:var(--text);}
+  .infoblock .row span.k{color:var(--muted); display:inline-block; min-width:70px;}
+  .personactsblock{padding:0 16px 14px; background:#fff; border-bottom:1px solid var(--line);}
+  .histblock{background:#fff; padding:12px 16px; border-bottom:1px solid var(--line);}
+  .histblock h4{font-size:13px; color:var(--ink); margin:0 0 8px;}
+  .histitem{font-size:12.5px; color:var(--text); padding:7px 0; border-bottom:1px dashed var(--line);}
+  .histitem:last-child{border-bottom:none;}
+  .histitem .hmeta{color:var(--muted); font-size:11.5px; margin-top:2px;}
+  .snsblock{background:#fff; padding:14px 16px; border-bottom:1px solid var(--line);}
+  .snsblock h4{font-size:13px; color:var(--ink); margin:0 0 8px; display:flex; justify-content:space-between; align-items:center;}
+  .snsrow{display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--line);}
+  .snsrow:last-of-type{border-bottom:none;}
+  .snsrow .platform{font-size:13.5px; font-weight:700; color:var(--ink);}
+  .snsrow a.snsbtn{font-size:12.5px; color:var(--accent); text-decoration:none;}
+  .snsrow .unset{font-size:12px; color:#c2c2bb;}
+  .contactform{background:#fff; padding:14px 16px; border-bottom:1px solid var(--line);}
+  .contactform .frow{margin-bottom:10px;}
+  .contactform .frow label{display:block; font-size:12px; color:var(--muted); margin-bottom:5px;}
+  .contactform input,.contactform select,.contactform textarea{width:100%; padding:9px 10px; font-size:13.5px;
+      border:1px solid var(--line); border-radius:10px; background:var(--paper); font-family:inherit;}
+  .contactform .chkrow{display:flex; align-items:center; gap:7px; font-size:13px;}
+  .sectionbtn{display:block; width:100%; padding:12px; margin:10px 16px; border-radius:12px;
+              border:1px solid var(--line); background:#fff; color:var(--ink); font-size:13.5px; font-weight:700;}
+
+  /* --- SNS確認画面 --- */
+  .snsnote{padding:10px 16px; font-size:12px; color:var(--muted); background:#fdf3ea;}
+  .snsSection{background:#fff; padding:14px 16px; border-bottom:1px solid var(--line);}
+  .snsSection h4{font-size:13px; color:var(--ink); margin:0 0 10px;}
+  .candrow{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 0;
+           border-bottom:1px dashed var(--line);}
+  .candrow:last-child{border-bottom:none;}
+  .candinfo{min-width:0;}
+  .candinfo b{font-size:13px; color:var(--ink);}
+  .candinfo div{font-size:11.5px; color:var(--muted); word-break:break-all;}
+  .candbtn{white-space:nowrap; padding:8px 12px; border-radius:10px; border:none;
+           background:var(--accent); color:#fff; font-size:12px;}
+  .candbtn.removebtn{background:var(--muted);}
+  .manualrow{display:flex; gap:8px; flex-wrap:wrap;}
+  .manualrow select{flex:0 0 110px; padding:9px 8px; font-size:13px; border:1px solid var(--line);
+                     border-radius:10px; background:var(--paper);}
+  .manualrow input{flex:1; min-width:140px; padding:9px 10px; font-size:13.5px; border:1px solid var(--line);
+                    border-radius:10px; background:var(--paper);}
+  .manualrow button{padding:9px 14px; border-radius:10px; border:none; background:var(--ink);
+                     color:#fff; font-size:12.5px;}
+  .searchlinks{display:flex; flex-wrap:wrap; gap:8px;}
+  .searchlinks a{font-size:12px; padding:7px 12px; border-radius:999px; border:1px solid var(--line);
+                 color:var(--ink); text-decoration:none; background:var(--paper);}
+  .dimtext{color:var(--muted); font-size:12.5px;}
 </style>
 </head>
 <body>
@@ -94,37 +253,136 @@
   </div>
 </div>
 
-<!-- ===== 検索画面 ===== -->
+<!-- ===== アプリ本体 ===== -->
 <div id="app">
   <header>
-    <div class="htitle"><b>名刺検索</b><span class="total" id="total"></span></div>
+    <div class="htitle">
+      <button class="backbtn" id="backBtn" hidden aria-label="戻る">←</button>
+      <b id="headerTitle">名刺検索</b><span class="total" id="total"></span>
+    </div>
     <button class="logout" id="logout">ログアウト</button>
   </header>
-  <div class="panel">
-    <input id="kw" class="kw" type="search" placeholder="会社名・氏名・住所で検索" enterkeyhint="search">
-    <div class="selrow">
-      <select id="pref"><option value="">都道府県</option></select>
-      <select id="ind"><option value="">業種</option></select>
-      <select id="role"><option value="">役職</option></select>
+
+  <!-- ホーム（検索） -->
+  <section data-view="home" id="view-home">
+    <div class="entries">
+      <div class="entry" id="entryNew"><b>–</b><span>新着名刺</span></div>
+      <div class="entry" id="entryUnorg"><b>–</b><span>未整理</span></div>
+      <div class="entry" id="entryFollow"><b>–</b><span>要フォロー</span></div>
     </div>
-    <div class="chips" id="chips"></div>
-    <div class="barbtn">
-      <button class="go" id="goBtn">検索</button>
-      <button class="clear" id="clearBtn">クリア</button>
+    <div class="panel">
+      <input id="kw" class="kw" type="search" placeholder="会社名・氏名・住所で検索" enterkeyhint="search">
+      <div class="selrow">
+        <select id="pref"><option value="">都道府県</option></select>
+        <select id="ind"><option value="">業種</option></select>
+        <select id="role"><option value="">役職</option></select>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="evchips" id="evchips"></div>
+      <div class="fieldrow"><input id="eventNameInput" type="text" placeholder="イベント名で検索（部分一致）" list="eventNamesList"></div>
+      <button type="button" class="details-toggle" id="toggleDetail">詳細（期間で絞り込み）▾</button>
+      <div class="daterow" id="dateRow" hidden>
+        <input id="contactFrom" type="date">
+        <input id="contactTo" type="date">
+      </div>
+      <div class="barbtn">
+        <button class="go" id="goBtn">検索</button>
+        <button class="clear" id="clearBtn">クリア</button>
+      </div>
     </div>
-  </div>
-  <div class="meta" id="metaEl"></div>
-  <div class="list" id="list">
-    <div class="empty"><b>条件を選んで検索</b>会社名・氏名・住所のほか、業種や役職でも絞り込めます。</div>
-  </div>
+    <div class="meta" id="metaEl"></div>
+    <div class="list" id="list">
+      <div class="empty"><b>条件を選んで検索</b>会社名・氏名・住所のほか、業種や役職でも絞り込めます。</div>
+    </div>
+  </section>
+
+  <!-- 新着名刺 -->
+  <section data-view="new" id="view-new" hidden>
+    <div class="newbar">
+      <div class="chips" id="newDaysChips"></div>
+      <div class="togglerow"><label><input type="checkbox" id="onlyUnorgToggle" checked> 未整理のみ</label></div>
+    </div>
+    <div class="heading" id="newHeading">新着名刺 0件</div>
+    <div class="sessionbar">
+      <div class="fieldrow"><label>今回の交換日</label><input type="date" id="sessDate"></div>
+      <div class="fieldrow"><label>イベント名</label><input type="text" id="sessEvent" list="eventNamesList" placeholder="例: 守成 青山デイライト"></div>
+    </div>
+    <div class="actrow">
+      <button type="button" id="bulkOpenBtn">交換情報を一括設定</button>
+      <button type="button" class="primary" id="startReviewBtn">整理を始める</button>
+    </div>
+    <div class="newlist" id="newList"><div class="spin">読み込み中…</div></div>
+  </section>
+
+  <!-- 整理モード -->
+  <section data-view="review" id="view-review" hidden>
+    <div class="reviewhead" id="reviewHead"></div>
+    <div class="personhead" id="reviewPersonHead"></div>
+    <div class="reviewbody" id="reviewFormBox"></div>
+    <div id="reviewContactBox"></div>
+    <div class="reviewnav" id="reviewNav"></div>
+  </section>
+
+  <!-- 人物詳細 -->
+  <section data-view="person" id="view-person" hidden>
+    <div class="personhead" id="personHead"></div>
+    <div class="infoblock" id="personInfo"></div>
+    <div class="personactsblock acts" id="personActs"></div>
+    <div class="histblock" id="personExchangeBlock"></div>
+    <div class="histblock" id="personHistBlock"></div>
+    <button type="button" class="sectionbtn" id="personAddContactBtn">接触履歴を追加</button>
+    <div id="personContactFormBox"></div>
+    <div class="snsblock" id="personSnsBlock"></div>
+    <div class="reviewbody" id="personFormBox"></div>
+    <div class="formsave" id="personSaveRow"></div>
+  </section>
+
+  <!-- SNS確認 -->
+  <section data-view="sns" id="view-sns" hidden>
+    <div class="snsnote">候補は確定するまで保存されません</div>
+    <div class="personhead" id="snsPersonHead"></div>
+    <div class="snsSection" id="snsDetectSection">
+      <h4>公式サイトから検出</h4>
+      <div id="snsDetectBody" class="spin">読み込み中…</div>
+    </div>
+    <div class="snsSection" id="snsManualSection">
+      <h4>手動で登録</h4>
+      <div class="manualrow">
+        <select id="snsManualPlatform">
+          <option value="facebook">Facebook</option>
+          <option value="instagram">Instagram</option>
+          <option value="linkedin">LinkedIn</option>
+          <option value="x">X</option>
+          <option value="youtube">YouTube</option>
+          <option value="other">その他</option>
+        </select>
+        <input type="text" id="snsManualUrl" placeholder="https://...">
+        <button type="button" id="snsManualBtn">確定</button>
+      </div>
+    </div>
+    <div class="snsSection" id="snsSearchSection">
+      <h4>検索して探す</h4>
+      <div id="snsSearchBody" class="spin">読み込み中…</div>
+    </div>
+    <div class="snsSection" id="snsCurrentSection">
+      <h4>確定済み</h4>
+      <div id="snsCurrentBody"></div>
+    </div>
+  </section>
 </div>
+
+<div id="toast"></div>
+<div id="modalRoot"></div>
+<datalist id="eventNamesList"></datalist>
 
 <script>
   // ▼▼ あなたのGAS Web App URL（/exec） ▼▼
   var GAS_URL = 'https://script.google.com/macros/s/AKfycbypcs3Kz4DYFcQtLwRxY4bSPM0ZO_6bjpNwCC1cEPWs8hNer1qWKtRVxTWB9j3aQOHz-g/exec';
 
+  var MOCK = /(?:^|[?&])mock=1(?:&|$)/.test(location.search);
+
   var EL = function(id){ return document.getElementById(id); };
-  var state = { pref:'', ind:'', role:'' };
+  var state = { pref:'', ind:'', role:'', eventName:'', contactFrom:'', contactTo:'', tag:'' };
   var QUICK = [
     {label:'経営者', role:'経営者'},
     {label:'🌸 花卉・園芸', ind:'花卉・園芸'},
@@ -133,14 +391,41 @@
     {label:'東京都', pref:'東京都'}
   ];
 
+  var IMPORTANCE = ['高','中','低'];
+  var RELATIONSHIP = ['初対面','知人','取引先','友人','紹介者'];
+  var QUICK_TAGS = ['守成クラブ','経営者','要フォロー','花需要','法人ギフト','EC','IT','AI','業務効率化','販売代理店候補','協業候補','紹介者'];
+  var CONTACT_TYPES = ['名刺交換','面談','電話','メール','紹介','その他'];
+  var PLATFORM_ORDER = ['facebook','instagram','linkedin','x','youtube','other'];
+  var PLATFORM_LABELS = { facebook:'Facebook', instagram:'Instagram', linkedin:'LinkedIn', x:'X', youtube:'YouTube', other:'その他' };
+
+  var EVENT_NAMES = [];
+  var newState = { days:7, onlyUnorganized:true, items:[] };
+  var reviewState = { list:[], index:0 };
+  var CURRENT_PERSON_ID = null;
+  var CURRENT_SNS_ID = null;
+  var pendingSearchQuery = null;
+  var pendingNewOptions = null;
+
   function getCreds(){
     try { return JSON.parse(sessionStorage.getItem('meishi_creds')||'null'); } catch(e){ return null; }
   }
   function setCreds(c){ sessionStorage.setItem('meishi_creds', JSON.stringify(c)); }
   function clearCreds(){ sessionStorage.removeItem('meishi_creds'); }
+  function doLogout(){ clearCreds(); location.reload(); }
 
-  // API: POST(text/plain)でプリフライト回避。creds同梱。
+  function getSession(){
+    try { return JSON.parse(sessionStorage.getItem('meishi_session')||'{}'); } catch(e){ return {}; }
+  }
+  function saveSession(s){ sessionStorage.setItem('meishi_session', JSON.stringify(s)); }
+
+  function pad(n){ return (n<10?'0':'')+n; }
+  function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+  function fmtDate(iso){ if(!iso) return ''; return String(iso).slice(0,10).replace(/-/g,'/'); }
+  function safeUrl(u){ return (u && /^https?:\/\//.test(String(u))) ? esc(u) : ''; }
+
+  // API: POST(text/plain)でプリフライト回避。creds同梱。mock=1の時はネットワークを使わない。
   async function api(action, extra){
+    if(MOCK){ return mockApi(action, extra||{}); }
     var creds = getCreds() || {};
     var body = Object.assign({ action:action, user:creds.user, pass:creds.pass }, extra||{});
     var res = await fetch(GAS_URL, {
@@ -151,11 +436,23 @@
     return await res.json();
   }
 
+  function toast(msg){
+    var t = EL('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t = setTimeout(function(){ t.classList.remove('show'); }, 3000);
+  }
+  function openModal(html){
+    EL('modalRoot').innerHTML = '<div class="modalbg"><div class="modalbox">'+html+'</div></div>';
+    EL('modalRoot').querySelector('.modalbg').addEventListener('click', function(e){
+      if(e.target===this){ closeModal(); }
+    });
+  }
+  function closeModal(){ EL('modalRoot').innerHTML=''; }
+
   // ---- ログイン ----
   EL('loginBtn').onclick = doLogin;
   EL('pass').addEventListener('keyup', function(e){ if(e.key==='Enter') doLogin(); });
   EL('user').addEventListener('keyup', function(e){ if(e.key==='Enter') EL('pass').focus(); });
-  EL('logout').onclick = function(){ clearCreds(); location.reload(); };
+  EL('logout').onclick = function(){ doLogout(); };
 
   async function doLogin(){
     var user = EL('user').value.trim(), pass = EL('pass').value;
@@ -183,8 +480,98 @@
     EL('login').style.display='none';
     EL('app').style.display='block';
     var f = await api('filters');
-    if(!f || !f.ok){ clearCreds(); location.reload(); return; }
+    if(!f || !f.ok){ doLogout(); return; }
     initFilters(f.data);
+    await loadEventNames();
+    EL('list').onclick = handleListClick;
+    if(!location.hash){ location.hash = '#home'; }
+    route();
+  }
+
+  window.addEventListener('hashchange', route);
+
+  function route(){
+    if(EL('app').style.display==='none') return;
+    var h = location.hash.replace(/^#/,'') || 'home';
+    var parts = h.split('/');
+    var view = parts[0], param = parts[1];
+    var titleMap = { home:'名刺検索', search:'検索結果', 'new':'新着名刺', review:'整理モード', person:'人物詳細', sns:'SNS確認' };
+
+    if(view==='search'){
+      showView('home');
+      EL('backBtn').hidden = false;
+      EL('headerTitle').textContent = titleMap.search;
+      if(pendingSearchQuery){
+        state = { pref:'', ind:'', role:'', eventName:'', contactFrom:'', contactTo:'', tag:'' };
+        Object.assign(state, pendingSearchQuery); pendingSearchQuery=null;
+        EL('kw').value=''; EL('eventNameInput').value = state.eventName||'';
+        sync(); renderChips(); renderEvChips();
+        search();
+      }
+      loadStats();
+      return;
+    }
+    if(['home','new','review','person','sns'].indexOf(view)===-1) view='home';
+    showView(view);
+    EL('backBtn').hidden = (view==='home');
+    EL('headerTitle').textContent = titleMap[view];
+    if(view==='home'){ loadStats(); }
+    else if(view==='new'){ initNewView(); }
+    else if(view==='review'){ initReviewView(); }
+    else if(view==='person'){ initPersonView(param); }
+    else if(view==='sns'){ initSnsView(param); }
+  }
+  function showView(name){
+    ['home','new','review','person','sns'].forEach(function(v){ EL('view-'+v).hidden = (v!==name); });
+  }
+  EL('backBtn').onclick = function(){
+    if(window.history.length>1){ window.history.back(); } else { location.hash='#home'; }
+  };
+
+  function handleListClick(e){
+    var nameEl = e.target.closest && e.target.closest('.name');
+    if(!nameEl) return;
+    var cardEl = nameEl.closest('.card');
+    if(cardEl){ location.hash = '#person/'+cardEl.getAttribute('data-id'); }
+  }
+
+  // ---- 入口カード ----
+  EL('entryNew').onclick = function(){ location.hash='#new'; };
+  EL('entryUnorg').onclick = function(){ pendingNewOptions={days:30, onlyUnorganized:true}; location.hash='#new'; };
+  EL('entryFollow').onclick = function(){ pendingSearchQuery={tag:'要フォロー'}; location.hash='#search'; };
+
+  function loadStats(){
+    api('stats').then(function(r){
+      if(r && r.ok){
+        EL('entryNew').querySelector('b').textContent = r.data.newCount;
+        EL('entryUnorg').querySelector('b').textContent = r.data.unorganizedCount;
+        EL('entryFollow').querySelector('b').textContent = r.data.followCount;
+      } else if(r && r.error==='auth'){ doLogout(); }
+    });
+  }
+
+  function loadEventNames(){
+    return api('eventNames').then(function(r){
+      if(r && r.ok){ EVENT_NAMES = r.data.items||[]; renderEventDatalist(); renderEvChips(); }
+      else if(r && r.error==='auth'){ doLogout(); }
+    });
+  }
+  function renderEventDatalist(){
+    EL('eventNamesList').innerHTML = EVENT_NAMES.map(function(e){ return '<option value="'+esc(e.name)+'">'; }).join('');
+  }
+  function renderEvChips(){
+    var box = EL('evchips'); box.innerHTML='';
+    EVENT_NAMES.slice(0,8).forEach(function(e){
+      var c = document.createElement('div');
+      c.className = 'evchip'+(state.eventName===e.name?' on':'');
+      c.textContent = e.name;
+      c.onclick = function(){
+        state.eventName = state.eventName===e.name ? '' : e.name;
+        EL('eventNameInput').value = state.eventName;
+        renderEvChips(); search();
+      };
+      box.appendChild(c);
+    });
   }
 
   // ---- フィルタ ----
@@ -221,20 +608,34 @@
   });
   EL('goBtn').onclick=search;
   EL('kw').addEventListener('keyup', function(e){ if(e.key==='Enter') search(); });
+  EL('eventNameInput').addEventListener('input', function(){ state.eventName=this.value; renderEvChips(); });
+  EL('eventNameInput').addEventListener('keyup', function(e){ if(e.key==='Enter') search(); });
+  EL('toggleDetail').onclick = function(){
+    var row = EL('dateRow'); row.hidden = !row.hidden;
+    this.textContent = row.hidden ? '詳細（期間で絞り込み）▾' : '詳細（期間で絞り込み）▲';
+  };
   EL('clearBtn').onclick=function(){
-    EL('kw').value=''; state={pref:'',ind:'',role:''}; sync(); renderChips();
+    EL('kw').value=''; state={pref:'',ind:'',role:'',eventName:'',contactFrom:'',contactTo:'',tag:''};
+    sync(); renderChips(); renderEvChips();
+    EL('eventNameInput').value=''; EL('contactFrom').value=''; EL('contactTo').value='';
+    EL('dateRow').hidden=true; EL('toggleDetail').textContent='詳細（期間で絞り込み）▾';
     EL('metaEl').textContent='';
     EL('list').innerHTML='<div class="empty"><b>条件を選んで検索</b>会社名・氏名・住所のほか、業種や役職でも絞り込めます。</div>';
   };
 
   // ---- 検索 ----
   async function search(){
-    var q={ keyword:EL('kw').value, pref:state.pref, industry:state.ind, roleLevel:state.role };
-    if(!q.keyword && !q.pref && !q.industry && !q.roleLevel){ EL('metaEl').textContent=''; return; }
+    state.eventName = EL('eventNameInput').value.trim();
+    state.contactFrom = EL('contactFrom').value;
+    state.contactTo = EL('contactTo').value;
+    var q = { keyword:EL('kw').value, pref:state.pref, industry:state.ind, roleLevel:state.role,
+              eventName:state.eventName, contactFrom:state.contactFrom, contactTo:state.contactTo, tag:state.tag };
+    var hasAny = q.keyword || q.pref || q.industry || q.roleLevel || q.eventName || q.tag;
+    if(!hasAny){ EL('metaEl').textContent=''; return; }
     EL('list').innerHTML='<div class="spin">検索中…</div>';
     try {
       var r = await api('search', { q:q });
-      if(!r || !r.ok){ if(r&&r.error==='auth'){ clearCreds(); location.reload(); return; }
+      if(!r || !r.ok){ if(r&&r.error==='auth'){ doLogout(); return; }
         EL('list').innerHTML='<div class="empty"><b>エラー</b>もう一度お試しください。</div>'; return; }
       render(r.data);
     } catch(e){
@@ -251,19 +652,756 @@
     var tel = p.telCompany || p.mobile;
     var telA = tel ? '<a class="act" href="tel:'+esc(tel.replace(/[^0-9+]/g,''))+'">📞 電話</a>' : '<span class="act dim">📞 電話</span>';
     var mailA = p.email ? '<a class="act" href="mailto:'+esc(p.email)+'">✉️ メール</a>' : '<span class="act dim">✉️ メール</span>';
-    var mapA = p.address ? '<a class="act" target="_blank" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.address)+'">🗺️ 地図</a>' : '<span class="act dim">🗺️ 地図</span>';
-    var siteA = p.url ? '<a class="act" target="_blank" href="'+esc(p.url)+'">🌐 サイト</a>' : '<span class="act dim">🌐 サイト</span>';
+    var mapA = p.address ? '<a class="act" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.address)+'">🗺️ 地図</a>' : '<span class="act dim">🗺️ 地図</span>';
+    var siteUrl = safeUrl(p.url);
+    var siteA = siteUrl ? '<a class="act" target="_blank" rel="noopener" href="'+siteUrl+'">🌐 サイト</a>' : '<span class="act dim">🌐 サイト</span>';
     var line2 = [p.company, p.dept].filter(Boolean).join(' / ');
     var line3 = [p.title, p.address].filter(Boolean).join('　');
     var tags='';
     if(p.industry) tags+='<span class="t">'+esc(p.industry)+'</span>';
     if(p.roleLevel && p.roleLevel!=='不明') tags+='<span class="t role">'+esc(p.roleLevel)+'</span>';
-    if(p.exchanged) tags+='<span class="t">交換 '+esc(p.exchanged)+'</span>';
-    return '<div class="card"><div class="name">'+esc(p.name||'(氏名不明)')+'</div>'+
+    if(p.lastEvent) tags+='<span class="t">'+esc(p.lastEvent)+'</span>';
+    else if(p.exchanged) tags+='<span class="t">交換 '+esc(p.exchanged)+'</span>';
+    (p.tags||[]).forEach(function(t){ tags+='<span class="t">'+esc(t)+'</span>'; });
+    return '<div class="card" data-id="'+esc(p.id)+'"><div class="name">'+esc(p.name||'(氏名不明)')+'</div>'+
       (line2?'<div class="co">'+esc(line2)+'</div>':'')+
       (line3?'<div class="sub">'+esc(line3)+'</div>':'')+
       '<div class="tags">'+tags+'</div>'+
       '<div class="acts">'+telA+mailA+mapA+siteA+'</div></div>';
+  }
+</script>
+<script>
+  // ==================== 新着名刺 ====================
+  function initNewView(){
+    if(pendingNewOptions){
+      newState.days = pendingNewOptions.days; newState.onlyUnorganized = pendingNewOptions.onlyUnorganized;
+      pendingNewOptions = null;
+    }
+    renderNewDaysChips();
+    EL('onlyUnorgToggle').checked = newState.onlyUnorganized;
+    loadSessionIntoBar();
+    loadNewList();
+  }
+  function renderNewDaysChips(){
+    var opts=[{d:1,label:'今日'},{d:3,label:'過去3日'},{d:7,label:'過去7日'},{d:30,label:'過去30日'}];
+    var box=EL('newDaysChips'); box.innerHTML='';
+    opts.forEach(function(o){
+      var c=document.createElement('div'); c.className='chip'+(newState.days===o.d?' on':''); c.textContent=o.label;
+      c.onclick=function(){ newState.days=o.d; renderNewDaysChips(); loadNewList(); };
+      box.appendChild(c);
+    });
+  }
+  EL('onlyUnorgToggle').onchange = function(){ newState.onlyUnorganized = this.checked; loadNewList(); };
+
+  function loadSessionIntoBar(){
+    var s = getSession();
+    EL('sessDate').value = s.date||'';
+    EL('sessEvent').value = s.eventName||'';
+  }
+  EL('sessDate').onchange = function(){ saveSession({ date:this.value, eventName:EL('sessEvent').value }); };
+  EL('sessEvent').onchange = function(){ saveSession({ date:EL('sessDate').value, eventName:this.value }); };
+
+  function loadNewList(){
+    EL('newList').innerHTML = '<div class="spin">読み込み中…</div>';
+    api('newCards', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }).then(function(r){
+      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} EL('newList').innerHTML='<div class="empty"><b>エラー</b></div>'; return; }
+      newState.items = r.data.items||[];
+      EL('newHeading').textContent = '新着名刺 '+r.data.count+'件';
+      renderNewList();
+    });
+  }
+  function renderNewList(){
+    var box=EL('newList');
+    if(!newState.items.length){ box.innerHTML='<div class="empty"><b>該当なし</b></div>'; return; }
+    box.innerHTML = newState.items.map(newRowHtml).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.newrow'), function(row){
+      row.addEventListener('click', function(e){
+        if(e.target.closest('.chk') || e.target.tagName==='INPUT' || e.target.closest('.snslink')) return;
+        location.hash = '#person/'+row.getAttribute('data-id');
+      });
+    });
+  }
+  function newRowHtml(p){
+    var badges = p.organized ? '<span class="badge done">整理済</span>' : '<span class="badge">未整理</span>';
+    if(p.lastEvent) badges += '<span class="badge">'+esc(p.lastEvent)+'</span>';
+    else if(p.exchanged) badges += '<span class="badge">交換 '+esc(p.exchanged)+'</span>';
+    if(p.snsChecked) badges += '<span class="badge dim">SNS✓</span>';
+    var sub = [p.company, p.title].filter(Boolean).join(' / ');
+    return '<div class="newrow" data-id="'+esc(p.id)+'">'
+      + '<input type="checkbox" class="chk" value="'+esc(p.id)+'">'
+      + '<div class="body"><div class="name2">'+esc(p.name||'(氏名不明)')+'</div>'
+      + (sub?'<div class="sub2">'+esc(sub)+'</div>':'')
+      + '<div class="sub2">取込 '+esc(fmtDate(p.importedAt))+'</div>'
+      + '<div class="badges">'+badges+'</div></div>'
+      + '<a href="#sns/'+esc(p.id)+'" class="snslink">SNS</a>'
+      + '</div>';
+  }
+  function getCheckedIds(){
+    return Array.prototype.map.call(EL('newList').querySelectorAll('.chk:checked'), function(c){ return c.value; });
+  }
+
+  EL('startReviewBtn').onclick = function(){
+    reviewState.list = newState.items.slice();
+    var firstUnorg = -1;
+    reviewState.list.forEach(function(p,i){ if(firstUnorg===-1 && !p.organized) firstUnorg=i; });
+    reviewState.index = firstUnorg>=0 ? firstUnorg : 0;
+    location.hash = '#review';
+  };
+
+  // ---- 一括設定モーダル ----
+  EL('bulkOpenBtn').onclick = openBulkModal;
+
+  function openBulkModal(){
+    var today = todayStr();
+    var checkedIds = getCheckedIds();
+    var prefillDate = EL('sessDate').value || today;
+    var prefillEvent = EL('sessEvent').value || '';
+    var html = ''
+      + '<div class="modaltitle">交換情報を一括設定</div>'
+      + '<div class="fgroup"><label>名刺交換日</label><input type="date" id="bkDate" value="'+esc(prefillDate)+'"></div>'
+      + '<div class="fgroup"><label>イベント名</label><input type="text" id="bkEvent" list="eventNamesList" value="'+esc(prefillEvent)+'"></div>'
+      + '<div class="fgroup"><label>対象</label><div class="radiorow">'
+      + '<label><input type="radio" name="bkScope" value="batch" checked> 今回取込全件（'+newState.days+'日以内）</label>'
+      + '<label><input type="radio" name="bkScope" value="unset"> 未設定の名刺のみ</label>'
+      + '<label><input type="radio" name="bkScope" value="ids" '+(checkedIds.length?'':'disabled')+'> チェックした人物（'+checkedIds.length+'件）</label>'
+      + '</div></div>'
+      + '<div class="previewbox" id="bkPreview">「対象を確認」を押してください</div>'
+      + '<div id="bkConfirmArea"></div>'
+      + '<div class="formsave" style="padding:14px 0 0;">'
+      + '<button type="button" id="bkPreviewBtn">対象を確認</button>'
+      + '<button type="button" class="primary" id="bkApplyBtn" disabled>適用</button>'
+      + '</div>';
+    openModal(html);
+    var previewData = null;
+    document.getElementById('bkPreviewBtn').onclick = function(){
+      var scope = document.querySelector('input[name="bkScope"]:checked').value;
+      var date = document.getElementById('bkDate').value;
+      var eventName = document.getElementById('bkEvent').value.trim();
+      if(!date){ toast('名刺交換日を入力してください'); return; }
+      var body = { scope:scope, days:newState.days, date:date, eventName:eventName };
+      if(scope==='ids') body.ids = checkedIds;
+      document.getElementById('bkPreview').textContent = '確認中…';
+      document.getElementById('bkApplyBtn').disabled = true;
+      document.getElementById('bkConfirmArea').innerHTML='';
+      api('bulkContactPreview', body).then(function(r){
+        if(!r || !r.ok){
+          if(r&&r.error==='auth'){ doLogout(); return; }
+          document.getElementById('bkPreview').textContent='エラーが発生しました';
+          return;
+        }
+        previewData = { scope:scope, date:date, eventName:eventName, ids: scope==='ids'?checkedIds:undefined, res:r.data };
+        document.getElementById('bkPreview').textContent =
+          r.data.targetCount+'件に設定します（うち上書き対象 '+r.data.willOverwriteCount+'件、履歴作成済み '+r.data.alreadyHistoryCount+'件）';
+        document.getElementById('bkApplyBtn').disabled = false;
+      });
+    };
+    document.getElementById('bkApplyBtn').onclick = function(){
+      if(!previewData) return;
+      if(previewData.res.willOverwriteCount > 0){ renderOverwriteConfirm(previewData); }
+      else { doBulkApply(previewData, false); }
+    };
+  }
+  function renderOverwriteConfirm(previewData){
+    var area = document.getElementById('bkConfirmArea');
+    area.innerHTML = '<div class="confirmbox">既存の交換日を上書きしますか？（'+previewData.res.willOverwriteCount+'件）'
+      + '<div class="row2"><button type="button" id="bkNoOverwrite">上書きしない</button><button type="button" class="danger" id="bkYesOverwrite">上書きする</button></div></div>';
+    document.getElementById('bkNoOverwrite').onclick = function(){ doBulkApply(previewData, false); };
+    document.getElementById('bkYesOverwrite').onclick = function(){ doBulkApply(previewData, true); };
+  }
+  function doBulkApply(previewData, overwrite){
+    var body = { scope:previewData.scope, days:newState.days, date:previewData.date, eventName:previewData.eventName, overwrite:overwrite };
+    if(previewData.scope==='ids') body.ids = previewData.ids;
+    api('bulkContactApply', body).then(function(r){
+      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('適用に失敗しました'); return; }
+      closeModal();
+      toast('交換日 更新 '+r.data.updatedDateCount+'件／履歴 作成 '+r.data.createdHistoryCount+'件／重複スキップ '+r.data.skippedDupCount+'件');
+      saveSession({ date: previewData.date, eventName: previewData.eventName });
+      loadSessionIntoBar();
+      loadNewList();
+      loadEventNames();
+    });
+  }
+</script>
+<script>
+  // ==================== CRMフォーム(共通部品) ====================
+  function chipsHtmlSingle(list, selected){
+    return list.map(function(v){ return '<div class="chip'+(selected===v?' on':'')+'">'+esc(v)+'</div>'; }).join('');
+  }
+  function chipsHtmlMulti(list, selectedList){
+    return list.map(function(v){ return '<div class="chip'+(selectedList.indexOf(v)>=0?' on':'')+'">'+esc(v)+'</div>'; }).join('');
+  }
+  function buildCrmFormHtml(crm){
+    crm = crm||{};
+    var tags = crm.tags||[];
+    var customTags = tags.filter(function(t){ return QUICK_TAGS.indexOf(t)===-1; });
+    var customChipsHtml = customTags.map(function(v){ return '<div class="chip on custom">'+esc(v)+'</div>'; }).join('');
+    return ''
+      + '<div class="crmform">'
+      + '<div class="fgroup"><label>重要度</label><div class="chipwrap" data-field="importance">'+chipsHtmlSingle(IMPORTANCE, crm.importance)+'</div></div>'
+      + '<div class="fgroup"><label>関係性</label><div class="chipwrap" data-field="relationship">'+chipsHtmlSingle(RELATIONSHIP, crm.relationship)+'</div></div>'
+      + '<div class="fgroup"><label>クイックタグ</label><div class="chipwrap" data-field="tags">'+chipsHtmlMulti(QUICK_TAGS, tags)+customChipsHtml+'</div>'
+      + '<div class="tagaddrow"><input type="text" class="taginput" placeholder="自由タグを追加してEnter"><button type="button" class="tagaddbtn">追加</button></div></div>'
+      + '<div class="fgroup"><label>相手のニーズ</label><input type="text" class="f-needs" value="'+esc(crm.needs)+'"></div>'
+      + '<div class="fgroup"><label>次回アクション</label><input type="text" class="f-nextAction" value="'+esc(crm.nextAction)+'"></div>'
+      + '<div class="fgroup"><label>次回アクション日</label><input type="date" class="f-nextActionDate" value="'+esc(crm.nextActionDate)+'"></div>'
+      + '<div class="fgroup"><label>人物メモ</label><textarea class="f-memo" rows="3">'+esc(crm.memo)+'</textarea></div>'
+      + '<details class="fgroup"><summary>詳細（紹介関連）</summary>'
+      + '<div class="fgroup"><label>紹介できる人</label><input type="text" class="f-canIntroduce" value="'+esc(crm.canIntroduce)+'"></div>'
+      + '<div class="fgroup"><label>紹介してほしい人</label><input type="text" class="f-wantIntroduce" value="'+esc(crm.wantIntroduce)+'"></div>'
+      + '</details>'
+      + '</div>';
+  }
+  function chipEl(text, on){
+    var d=document.createElement('div'); d.className='chip'+(on?' on':''); d.textContent=text; return d;
+  }
+  function bindCrmFormEvents(container){
+    var singleGroups = container.querySelectorAll('[data-field="importance"], [data-field="relationship"]');
+    Array.prototype.forEach.call(singleGroups, function(group){
+      Array.prototype.forEach.call(group.querySelectorAll('.chip'), function(chip){
+        chip.onclick = function(){
+          var wasOn = chip.classList.contains('on');
+          Array.prototype.forEach.call(group.querySelectorAll('.chip'), function(c){ c.classList.remove('on'); });
+          if(!wasOn) chip.classList.add('on');
+        };
+      });
+    });
+    var tagGroup = container.querySelector('[data-field="tags"]');
+    function bindTagChip(chip){ chip.onclick = function(){ chip.classList.toggle('on'); }; }
+    Array.prototype.forEach.call(tagGroup.querySelectorAll('.chip'), bindTagChip);
+    var addBtn = container.querySelector('.tagaddbtn');
+    var input = container.querySelector('.taginput');
+    function addTag(){
+      var v = input.value.trim();
+      if(!v) return;
+      var existing = null;
+      Array.prototype.forEach.call(tagGroup.querySelectorAll('.chip'), function(c){ if(c.textContent===v) existing=c; });
+      if(existing){ existing.classList.add('on'); }
+      else {
+        var chip = chipEl(v, true); chip.classList.add('custom');
+        bindTagChip(chip);
+        tagGroup.appendChild(chip);
+      }
+      input.value='';
+    }
+    addBtn.onclick = addTag;
+    input.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); addTag(); } });
+  }
+  function collectCrmForm(container){
+    var imp = container.querySelector('[data-field="importance"] .chip.on');
+    var rel = container.querySelector('[data-field="relationship"] .chip.on');
+    var tagEls = container.querySelectorAll('[data-field="tags"] .chip.on');
+    var tags = Array.prototype.map.call(tagEls, function(e){ return e.textContent; });
+    return {
+      importance: imp?imp.textContent:'',
+      relationship: rel?rel.textContent:'',
+      tags: tags,
+      needs: container.querySelector('.f-needs').value,
+      canIntroduce: container.querySelector('.f-canIntroduce').value,
+      wantIntroduce: container.querySelector('.f-wantIntroduce').value,
+      nextAction: container.querySelector('.f-nextAction').value,
+      nextActionDate: container.querySelector('.f-nextActionDate').value,
+      memo: container.querySelector('.f-memo').value
+    };
+  }
+
+  // ==================== 接触履歴フォーム(共通部品) ====================
+  function contactFormHtml(){
+    var sess = getSession();
+    var today = todayStr();
+    return '<div class="contactform">'
+      + '<div class="frow"><label>接触日</label><input type="date" class="cf-date" value="'+esc(sess.date||today)+'"></div>'
+      + '<div class="frow"><label>イベント名</label><input type="text" class="cf-event" list="eventNamesList" value="'+esc(sess.eventName||'')+'"></div>'
+      + '<div class="frow"><label>接触種類</label><select class="cf-type">'+CONTACT_TYPES.map(function(t){ return '<option value="'+esc(t)+'">'+esc(t)+'</option>'; }).join('')+'</select></div>'
+      + '<div class="frow"><label>会話メモ</label><textarea class="cf-memo" rows="2"></textarea></div>'
+      + '<div class="frow chkrow"><label><input type="checkbox" class="cf-follow"> 要フォロー</label></div>'
+      + '<div class="frow"><label>フォロー日</label><input type="date" class="cf-followdate"></div>'
+      + '<div class="formsave" style="padding:6px 0 0;"><button type="button" class="primary cf-submit">追加</button><button type="button" class="cf-cancel">キャンセル</button></div>'
+      + '</div>';
+  }
+  function renderContactForm(container, personId, onDone){
+    container.innerHTML = contactFormHtml();
+    container.querySelector('.cf-submit').onclick = function(){
+      var body = {
+        id: personId,
+        contactDate: container.querySelector('.cf-date').value,
+        eventName: container.querySelector('.cf-event').value.trim(),
+        contactType: container.querySelector('.cf-type').value,
+        memo: container.querySelector('.cf-memo').value,
+        followUp: container.querySelector('.cf-follow').checked,
+        followDate: container.querySelector('.cf-followdate').value
+      };
+      api('addContact', body).then(function(r){
+        if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('追加に失敗しました'); return; }
+        if(r.data.duplicate){ toast('同じ履歴が既にあります'); } else { toast('接触履歴を追加しました'); }
+        container.innerHTML='';
+        if(onDone) onDone(r.data);
+      });
+    };
+    container.querySelector('.cf-cancel').onclick = function(){ container.innerHTML=''; if(onDone) onDone(null); };
+  }
+  function lastExchangeLabel(histories){
+    if(!histories || !histories.length) return '';
+    var arr = histories.filter(function(x){ return x.contactType==='名刺交換'; });
+    return arr.length ? arr[0].label : '';
+  }
+</script>
+<script>
+  // ==================== 整理モード ====================
+  function initReviewView(){
+    if(!reviewState.list.length){
+      EL('reviewHead').textContent='';
+      EL('reviewPersonHead').innerHTML='';
+      EL('reviewFormBox').innerHTML='<div class="empty"><b>対象がありません</b>新着名刺画面から開始してください。</div>';
+      EL('reviewContactBox').innerHTML='';
+      EL('reviewNav').innerHTML='<button type="button" id="reviewBackToNew">新着画面へ</button>';
+      document.getElementById('reviewBackToNew').onclick = function(){ location.hash='#new'; };
+      return;
+    }
+    loadReviewPerson();
+  }
+  function loadReviewPerson(){
+    if(reviewState.index >= reviewState.list.length){ renderReviewDone(); return; }
+    var item = reviewState.list[reviewState.index];
+    EL('reviewHead').textContent = '新着名刺 '+reviewState.list.length+'件　'+(reviewState.index+1)+' / '+reviewState.list.length;
+    EL('reviewFormBox').innerHTML = '<div class="spin">読み込み中…</div>';
+    EL('reviewContactBox').innerHTML='';
+    api('person', { id:item.id }).then(function(r){
+      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} EL('reviewFormBox').innerHTML='<div class="empty"><b>エラー</b></div>'; return; }
+      renderReviewPerson(item.id, r.data);
+    });
+  }
+  function markLocalOrganized(id, val){
+    reviewState.list.forEach(function(p){ if(p.id===id) p.organized=val; });
+    newState.items.forEach(function(p){ if(p.id===id) p.organized=val; });
+  }
+  function renderReviewPerson(id, data){
+    var card=data.card, crm=data.crm;
+    var sub=[card.company, card.title].filter(Boolean).join(' / ');
+    var exLabel = lastExchangeLabel(data.histories) || (card.exchanged?('交換 '+fmtDate(card.exchanged)):'');
+    EL('reviewPersonHead').innerHTML = '<div class="name3">'+esc(card.name||'(氏名不明)')+'</div>'
+      + (sub?'<div class="sub3">'+esc(sub)+'</div>':'')
+      + (exLabel?'<div class="sub3">'+esc(exLabel)+'</div>':'');
+    EL('reviewFormBox').innerHTML = buildCrmFormHtml(crm);
+    bindCrmFormEvents(EL('reviewFormBox'));
+    var organized = !!crm.organized;
+    EL('reviewNav').innerHTML =
+      '<button type="button" id="rvSaveNext" class="primary">保存して次へ</button>'
+      + '<button type="button" id="rvSkip">次へ（保存しない）</button>'
+      + '<button type="button" id="rvOrganize">'+(organized?'未整理に戻す':'整理済みにする')+'</button>'
+      + '<button type="button" id="rvSns">SNSを探す</button>';
+    EL('reviewContactBox').innerHTML = '<button type="button" class="sectionbtn" id="rvAddContactBtn">接触履歴を追加</button><div id="rvContactFormBox"></div>';
+
+    document.getElementById('rvSaveNext').onclick = function(){
+      api('savePerson', { id:id, crm: collectCrmForm(EL('reviewFormBox')), organized:true }).then(function(r){
+        if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('保存に失敗しました'); return; }
+        markLocalOrganized(id, true);
+        toast('保存しました');
+        reviewState.index++; loadReviewPerson();
+      });
+    };
+    document.getElementById('rvSkip').onclick = function(){ reviewState.index++; loadReviewPerson(); };
+    document.getElementById('rvOrganize').onclick = function(){
+      api('markOrganized', { id:id, organized: !organized }).then(function(r){
+        if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('更新に失敗しました'); return; }
+        markLocalOrganized(id, r.data.organized);
+        toast(r.data.organized?'整理済みにしました':'未整理に戻しました');
+        data.crm.organized = r.data.organized;
+        renderReviewPerson(id, data);
+      });
+    };
+    document.getElementById('rvSns').onclick = function(){ location.hash='#sns/'+id; };
+    document.getElementById('rvAddContactBtn').onclick = function(){
+      document.getElementById('rvAddContactBtn').style.display='none';
+      renderContactForm(document.getElementById('rvContactFormBox'), id, function(){
+        document.getElementById('rvAddContactBtn').style.display='';
+      });
+    };
+  }
+  function renderReviewDone(){
+    EL('reviewHead').textContent='';
+    EL('reviewPersonHead').innerHTML='';
+    var remaining = reviewState.list.filter(function(p){ return !p.organized; }).length;
+    EL('reviewFormBox').innerHTML = '<div class="donebox"><b>整理完了。未整理 '+remaining+'件</b></div>';
+    EL('reviewContactBox').innerHTML='';
+    EL('reviewNav').innerHTML = '<button type="button" id="rvBackNew" class="primary">新着画面へ戻る</button>';
+    document.getElementById('rvBackNew').onclick = function(){ location.hash='#new'; };
+  }
+</script>
+<script>
+  // ==================== 人物詳細 ====================
+  function initPersonView(id){
+    CURRENT_PERSON_ID = id;
+    EL('personHead').innerHTML='';
+    EL('personInfo').innerHTML='<div class="spin">読み込み中…</div>';
+    EL('personActs').innerHTML='';
+    EL('personExchangeBlock').innerHTML='';
+    EL('personHistBlock').innerHTML='';
+    EL('personSnsBlock').innerHTML='';
+    EL('personFormBox').innerHTML='';
+    EL('personSaveRow').innerHTML='';
+    EL('personContactFormBox').innerHTML='';
+    EL('personAddContactBtn').style.display='';
+    loadPerson(id);
+  }
+  function loadPerson(id){
+    api('person', { id:id }).then(function(r){
+      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} EL('personInfo').innerHTML='<div class="empty"><b>取得できませんでした</b></div>'; return; }
+      renderPerson(id, r.data);
+    });
+  }
+  function personInfoHtml(card){
+    var rows=[];
+    function row(k,v){ if(v){ rows.push('<div class="row"><span class="k">'+esc(k)+'</span>'+esc(v)+'</div>'); } }
+    row('会社', card.company); row('部署', card.dept); row('役職', card.title);
+    row('電話', card.telCompany); row('携帯', card.mobile); row('メール', card.email);
+    row('住所', card.address || [card.pref, card.city].filter(Boolean).join(''));
+    row('Web', card.url);
+    row('交換日', card.exchanged ? fmtDate(card.exchanged) : '');
+    row('取込日', card.importedAt ? fmtDate(card.importedAt) : '');
+    return rows.join('');
+  }
+  function personActsHtml(card){
+    var tel = card.telCompany || card.mobile;
+    var telA = tel ? '<a class="act" href="tel:'+esc(tel.replace(/[^0-9+]/g,''))+'">📞 電話</a>' : '<span class="act dim">📞 電話</span>';
+    var mailA = card.email ? '<a class="act" href="mailto:'+esc(card.email)+'">✉️ メール</a>' : '<span class="act dim">✉️ メール</span>';
+    var addr = card.address || [card.pref, card.city].filter(Boolean).join('');
+    var mapA = addr ? '<a class="act" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(addr)+'">🗺️ 地図</a>' : '<span class="act dim">🗺️ 地図</span>';
+    var siteUrl = safeUrl(card.url);
+    var siteA = siteUrl ? '<a class="act" target="_blank" rel="noopener" href="'+siteUrl+'">🌐 サイト</a>' : '<span class="act dim">🌐 サイト</span>';
+    return telA+mailA+mapA+siteA;
+  }
+  function histItemHtml(h){
+    var meta = [fmtDate(h.contactDate), h.eventName, h.contactType].filter(Boolean).join(' ・ ');
+    var follow = h.followUp ? ('要フォロー'+(h.followDate?'（'+fmtDate(h.followDate)+'）':'')) : '';
+    return '<div class="histitem">'+esc(meta)
+      + (h.memo?'<div class="hmeta">'+esc(h.memo)+'</div>':'')
+      + (follow?'<div class="hmeta">'+esc(follow)+'</div>':'')
+      + '</div>';
+  }
+  function snsBlockHtml(sns){
+    sns = sns||{};
+    var rows = PLATFORM_ORDER.map(function(p){
+      var url = sns[p+'Url'];
+      var label = PLATFORM_LABELS[p];
+      var u = safeUrl(url);
+      var link = u ? '<a class="snsbtn" target="_blank" rel="noopener" href="'+u+'">'+esc(label)+'</a>' : '<span class="unset">未確認</span>';
+      return '<div class="snsrow"><span class="platform">'+esc(label)+'</span>'+link+'</div>';
+    }).join('');
+    var checkedBadge = sns.snsCheckedAt ? '<span class="badge done">SNS確認済み</span>' : '<span class="badge">SNS未確認</span>';
+    return '<h4>SNS '+checkedBadge+'</h4>' + rows + '<button type="button" class="sectionbtn" id="personSnsLinkBtn" style="margin:12px 0 0;">SNSを探す</button>';
+  }
+  function renderPerson(id, data){
+    var card=data.card, crm=data.crm, sns=data.sns, histories=data.histories||[];
+    EL('personHead').innerHTML = '<div class="name3">'+esc(card.name||'(氏名不明)')+'</div>'
+      + '<div class="sub3">'+esc([card.company, card.dept, card.title].filter(Boolean).join(' / '))+'</div>';
+    EL('personInfo').innerHTML = personInfoHtml(card);
+    EL('personActs').innerHTML = personActsHtml(card);
+    var exList = histories.filter(function(h){ return h.contactType==='名刺交換'; });
+    EL('personExchangeBlock').innerHTML = '<h4>交換</h4>' + (exList.length
+      ? exList.map(function(h){ return '<div class="histitem">'+esc(h.label)+'</div>'; }).join('')
+      : '<div class="histitem" style="border:none;color:var(--muted);">記録なし</div>');
+    EL('personHistBlock').innerHTML = '<h4>履歴</h4>' + (histories.length
+      ? histories.map(histItemHtml).join('')
+      : '<div class="histitem" style="border:none;color:var(--muted);">記録なし</div>');
+    EL('personSnsBlock').innerHTML = snsBlockHtml(sns);
+    document.getElementById('personSnsLinkBtn').onclick = function(){ location.hash='#sns/'+id; };
+    EL('personFormBox').innerHTML = buildCrmFormHtml(crm);
+    bindCrmFormEvents(EL('personFormBox'));
+    var organized = !!crm.organized;
+    EL('personSaveRow').innerHTML = '<button type="button" id="pSaveBtn" class="primary">保存</button>'
+      + '<button type="button" id="pOrganizeBtn">'+(organized?'未整理に戻す':'整理済みにする')+'</button>';
+    document.getElementById('pSaveBtn').onclick = function(){
+      api('savePerson', { id:id, crm: collectCrmForm(EL('personFormBox')), organized: organized }).then(function(r){
+        if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('保存に失敗しました'); return; }
+        toast('保存しました');
+      });
+    };
+    document.getElementById('pOrganizeBtn').onclick = function(){
+      api('markOrganized', { id:id, organized: !organized }).then(function(r){
+        if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('更新に失敗しました'); return; }
+        toast(r.data.organized?'整理済みにしました':'未整理に戻しました');
+        loadPerson(id);
+      });
+    };
+  }
+  EL('personAddContactBtn').onclick = function(){
+    if(!CURRENT_PERSON_ID) return;
+    EL('personAddContactBtn').style.display='none';
+    renderContactForm(EL('personContactFormBox'), CURRENT_PERSON_ID, function(){
+      EL('personAddContactBtn').style.display='';
+      loadPerson(CURRENT_PERSON_ID);
+    });
+  };
+</script>
+<script>
+  // ==================== SNS確認 ====================
+  function initSnsView(id){
+    CURRENT_SNS_ID = id;
+    EL('snsPersonHead').innerHTML = '<div class="spin">読み込み中…</div>';
+    EL('snsDetectBody').innerHTML = '<div class="spin">読み込み中…</div>';
+    EL('snsSearchBody').innerHTML = '<div class="spin">読み込み中…</div>';
+    EL('snsCurrentBody').innerHTML = '';
+    EL('snsManualUrl').value = '';
+    EL('snsManualPlatform').value = 'facebook';
+    loadSnsPersonHead(id);
+    loadSnsDetect(id);
+    loadSnsSearch(id);
+  }
+  function loadSnsPersonHead(id){
+    api('person', { id:id }).then(function(r){
+      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} EL('snsPersonHead').innerHTML=''; return; }
+      var card = r.data.card;
+      EL('snsPersonHead').innerHTML = '<div class="name3">'+esc(card.name||'(氏名不明)')+'</div><div class="sub3">'+esc([card.company, card.title].filter(Boolean).join(' / '))+'</div>';
+      renderSnsCurrent(id, r.data.sns);
+    });
+  }
+  function renderSnsCurrent(id, sns){
+    sns = sns||{};
+    var any=false;
+    var html = PLATFORM_ORDER.map(function(p){
+      var url = sns[p+'Url'];
+      if(!url) return '';
+      any=true;
+      return '<div class="candrow"><div class="candinfo"><b>'+esc(PLATFORM_LABELS[p])+'</b><div>'+esc(url)+'</div></div>'
+        + '<button type="button" class="candbtn removebtn snsRemoveBtn" data-platform="'+esc(p)+'">解除</button></div>';
+    }).join('');
+    EL('snsCurrentBody').innerHTML = any ? html : '<div class="dimtext">確定済みのSNSはまだありません</div>';
+    Array.prototype.forEach.call(EL('snsCurrentBody').querySelectorAll('.snsRemoveBtn'), function(btn){
+      btn.onclick = function(){
+        api('snsRemove', { id:id, platform: btn.getAttribute('data-platform') }).then(function(r){
+          if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('解除に失敗しました'); return; }
+          toast('解除しました');
+          loadSnsPersonHead(id);
+        });
+      };
+    });
+  }
+  function loadSnsDetect(id){
+    api('snsDetectFromSite', { id:id }).then(function(r){
+      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} EL('snsDetectBody').innerHTML='<div class="dimtext">公式サイトを取得できませんでした</div>'; return; }
+      var d = r.data;
+      if(d.error){ EL('snsDetectBody').innerHTML='<div class="dimtext">公式サイトを取得できませんでした</div>'; return; }
+      if(!d.siteUrl){ EL('snsDetectBody').innerHTML='<div class="dimtext">会社URLが未登録のため自動検出できません</div>'; return; }
+      if(!d.candidates || !d.candidates.length){ EL('snsDetectBody').innerHTML='<div class="dimtext">候補は見つかりませんでした（'+esc(d.siteUrl)+'）</div>'; return; }
+      EL('snsDetectBody').innerHTML = d.candidates.map(function(c,i){
+        return '<div class="candrow"><div class="candinfo"><b>'+esc(PLATFORM_LABELS[c.platform]||c.platform)+'</b>'
+          + '<div>'+esc(c.url)+'</div><div>検出元: 公式サイト: '+esc(d.siteUrl)+'</div></div>'
+          + '<button type="button" class="candbtn snsConfirmBtn" data-i="'+i+'">このアカウントで確定</button></div>';
+      }).join('');
+      Array.prototype.forEach.call(EL('snsDetectBody').querySelectorAll('.snsConfirmBtn'), function(btn){
+        btn.onclick = function(){
+          var c = d.candidates[Number(btn.getAttribute('data-i'))];
+          doSnsSave(id, c.platform, c.url);
+        };
+      });
+    });
+  }
+  function loadSnsSearch(id){
+    api('snsSearchLinks', { id:id }).then(function(r){
+      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} EL('snsSearchBody').innerHTML=''; return; }
+      var links = r.data.links||[];
+      EL('snsSearchBody').innerHTML = '<div class="searchlinks">' + links.map(function(l){
+        var label = l.label || PLATFORM_LABELS[l.platform] || l.platform;
+        var out = '';
+        var g = safeUrl(l.google);
+        if(g) out += '<a target="_blank" rel="noopener" href="'+g+'">Google で'+esc(label)+'検索</a>';
+        var n = safeUrl(l.native);
+        if(n) out += '<a target="_blank" rel="noopener" href="'+n+'">'+esc(label)+'内で検索</a>';
+        return out;
+      }).join('') + '</div>';
+    });
+  }
+  function doSnsSave(id, platform, url, onDone){
+    api('snsSave', { id:id, platform:platform, url:url }).then(function(r){
+      if(!r || !r.ok){
+        if(r&&r.error==='auth'){ doLogout(); return; }
+        if(r&&r.error==='bad_url'){ toast('https:// から始まる URL を入力してください'); return; }
+        if(r&&r.error==='bad_domain'){ toast('このSNSのドメインではありません'); return; }
+        toast('保存に失敗しました'); return;
+      }
+      toast('確定しました');
+      if(onDone) onDone();
+      loadSnsPersonHead(id);
+      loadSnsDetect(id);
+    });
+  }
+  EL('snsManualBtn').onclick = function(){
+    if(!CURRENT_SNS_ID) return;
+    var platform = EL('snsManualPlatform').value;
+    var url = EL('snsManualUrl').value.trim();
+    doSnsSave(CURRENT_SNS_ID, platform, url, function(){ EL('snsManualUrl').value=''; });
+  };
+</script>
+<script>
+  // ==================== モックモード（?mock=1 のみ有効。本番挙動には影響しない） ====================
+  var MOCK_DB = { persons: [
+    { card:{ id:'M00001', company:'株式会社ABC商事', dept:'営業部', title:'代表取締役', roleLevel:'経営者', name:'田中太郎', industry:'IT', email:'tanaka@abc.co.jp', postal:'100-0001', pref:'東京都', city:'千代田区', address:'東京都千代田区1-1-1', telCompany:'03-1111-2222', mobile:'090-1111-2222', fax:'', url:'https://abc-example.co.jp', exchanged:'2026-09-05', importedAt:'2026-09-08', batchId:'eight-20260908-0900', biko:'' },
+      crm:{ organized:false, importance:'高', relationship:'初対面', tags:['経営者','要フォロー'], needs:'新規取引先探し', canIntroduce:'', wantIntroduce:'', nextAction:'', nextActionDate:'', memo:'' },
+      sns:{ facebookUrl:'', instagramUrl:'', linkedinUrl:'', xUrl:'', youtubeUrl:'', otherSnsUrl:'', snsCheckedAt:'' },
+      histories:[ { contactDate:'2026-09-05', eventName:'守成 青山デイライト', contactType:'名刺交換', memo:'', followUp:false, followDate:'', createdAt:'2026-09-08 09:00:00', label:'守成 青山デイライト 260905' } ] },
+    { card:{ id:'M00002', company:'合同会社フローラ', dept:'', title:'マネージャー', roleLevel:'管理職', name:'佐藤花子', industry:'花卉・園芸', email:'sato@flora.example.com', postal:'150-0001', pref:'東京都', city:'渋谷区', address:'東京都渋谷区2-2-2', telCompany:'03-2222-3333', mobile:'', fax:'', url:'', exchanged:'', importedAt:'2026-09-08', batchId:'eight-20260908-0900', biko:'' },
+      crm:{ organized:true, importance:'中', relationship:'知人', tags:['花需要'], needs:'', canIntroduce:'', wantIntroduce:'', nextAction:'', nextActionDate:'', memo:'花の定期便に興味あり' },
+      sns:{ facebookUrl:'https://facebook.com/flora.sato', instagramUrl:'', linkedinUrl:'', xUrl:'', youtubeUrl:'', otherSnsUrl:'', snsCheckedAt:'2026-09-08 10:00:00' },
+      histories:[] },
+    { card:{ id:'M00003', company:'株式会社EC総研', dept:'マーケティング部', title:'部長', roleLevel:'管理職', name:'鈴木一郎', industry:'EC・通販', email:'suzuki@ecsoken.example.com', postal:'160-0001', pref:'東京都', city:'新宿区', address:'東京都新宿区3-3-3', telCompany:'03-3333-4444', mobile:'090-3333-4444', fax:'', url:'https://ecsoken.example.com', exchanged:'2026-09-06', importedAt:'2026-09-07', batchId:'eight-20260907-1800', biko:'' },
+      crm:{ organized:false, importance:'', relationship:'', tags:[], needs:'', canIntroduce:'', wantIntroduce:'', nextAction:'', nextActionDate:'', memo:'' },
+      sns:{ facebookUrl:'', instagramUrl:'', linkedinUrl:'', xUrl:'', youtubeUrl:'', otherSnsUrl:'', snsCheckedAt:'' },
+      histories:[ { contactDate:'2026-09-06', eventName:'異業種交流会', contactType:'名刺交換', memo:'', followUp:false, followDate:'', createdAt:'2026-09-07 18:00:00', label:'異業種交流会 260906' } ] },
+    { card:{ id:'M00004', company:'個人事業主 山本', dept:'', title:'代表', roleLevel:'経営者', name:'山本次郎', industry:'士業', email:'', postal:'', pref:'神奈川県', city:'横浜市', address:'神奈川県横浜市4-4-4', telCompany:'', mobile:'080-4444-5555', fax:'', url:'', exchanged:'', importedAt:'2026-09-09', batchId:'eight-20260909-0800', biko:'' },
+      crm:{ organized:false, importance:'', relationship:'', tags:[], needs:'', canIntroduce:'', wantIntroduce:'', nextAction:'', nextActionDate:'', memo:'' },
+      sns:{ facebookUrl:'', instagramUrl:'', linkedinUrl:'', xUrl:'', youtubeUrl:'', otherSnsUrl:'', snsCheckedAt:'' },
+      histories:[] },
+    { card:{ id:'M00005', company:'株式会社AIソリューションズ', dept:'開発部', title:'CTO', roleLevel:'役員', name:'高橋美咲', industry:'IT', email:'takahashi@ai-sol.example.com', postal:'', pref:'東京都', city:'港区', address:'東京都港区5-5-5', telCompany:'03-5555-6666', mobile:'', fax:'', url:'https://ai-sol.example.com', exchanged:'2026-09-05', importedAt:'2026-09-08', batchId:'eight-20260908-0900', biko:'' },
+      crm:{ organized:false, importance:'高', relationship:'紹介者', tags:['AI','協業候補'], needs:'', canIntroduce:'', wantIntroduce:'', nextAction:'', nextActionDate:'', memo:'' },
+      sns:{ facebookUrl:'', instagramUrl:'', linkedinUrl:'https://linkedin.com/in/misaki-takahashi', xUrl:'', youtubeUrl:'', otherSnsUrl:'', snsCheckedAt:'2026-09-08 11:00:00' },
+      histories:[ { contactDate:'2026-09-05', eventName:'守成 青山デイライト', contactType:'名刺交換', memo:'', followUp:true, followDate:'2026-09-15', createdAt:'2026-09-08 09:00:00', label:'守成 青山デイライト 260905' } ] }
+  ]};
+  function findMockPerson(id){
+    var found=null;
+    MOCK_DB.persons.forEach(function(p){ if(p.card.id===id) found=p; });
+    return found;
+  }
+  function summaryOfMock(p){
+    var exList = p.histories.filter(function(h){ return h.contactType==='名刺交換'; });
+    return {
+      id:p.card.id, name:p.card.name, company:p.card.company, dept:p.card.dept, title:p.card.title,
+      roleLevel:p.card.roleLevel, industry:p.card.industry, importedAt:p.card.importedAt,
+      exchanged:p.card.exchanged, batchId:p.card.batchId, organized:!!p.crm.organized,
+      tags:p.crm.tags||[], snsChecked: !!p.sns.snsCheckedAt,
+      lastEvent: exList.length ? exList[0].label : ''
+    };
+  }
+  function formatMockLabel(eventName, iso){
+    var ymd = String(iso||'').replace(/-/g,'').slice(2,8);
+    return (eventName?eventName+' ':'') + ymd;
+  }
+  function mockApi(action, body){
+    return new Promise(function(resolve){ setTimeout(function(){ resolve(mockHandle(action, body||{})); }, 120); });
+  }
+  function mockHandle(action, body){
+    if(action==='ping') return {ok:true, data:{}};
+    if(action==='filters'){
+      return {ok:true, data:{
+        total: MOCK_DB.persons.length,
+        prefs:[{name:'東京都',count:4},{name:'神奈川県',count:1}],
+        industries:[{name:'IT',count:2},{name:'花卉・園芸',count:1},{name:'EC・通販',count:1},{name:'士業',count:1}],
+        roles:[{name:'経営者',count:2},{name:'管理職',count:2},{name:'役員',count:1}]
+      }};
+    }
+    if(action==='stats'){
+      var unorg = MOCK_DB.persons.filter(function(p){ return !p.crm.organized; }).length;
+      var follow = MOCK_DB.persons.filter(function(p){
+        return (p.crm.tags||[]).indexOf('要フォロー')>=0 || p.histories.some(function(h){ return h.followUp; });
+      }).length;
+      return {ok:true, data:{ total: MOCK_DB.persons.length, newCount: MOCK_DB.persons.length, unorganizedCount: unorg, followCount: follow, days:7 }};
+    }
+    if(action==='search'){
+      var q = body.q||{};
+      var items = MOCK_DB.persons.filter(function(p){
+        var s = summaryOfMock(p);
+        if(q.keyword){
+          var hay = [p.card.name, p.card.company, p.card.address].join(' ');
+          if(hay.indexOf(q.keyword)===-1) return false;
+        }
+        if(q.pref && p.card.pref!==q.pref) return false;
+        if(q.industry && p.card.industry!==q.industry) return false;
+        if(q.roleLevel && p.card.roleLevel!==q.roleLevel) return false;
+        if(q.eventName && p.histories.filter(function(h){ return h.eventName.indexOf(q.eventName)>=0; }).length===0) return false;
+        if(q.tag && s.tags.indexOf(q.tag)===-1) return false;
+        return true;
+      }).map(function(p){
+        var s = summaryOfMock(p);
+        return { id:s.id, name:s.name, company:s.company, dept:s.dept, title:s.title, roleLevel:s.roleLevel,
+          industry:s.industry, email:p.card.email, telCompany:p.card.telCompany, mobile:p.card.mobile,
+          address:p.card.address, url:p.card.url, exchanged:s.exchanged, tags:s.tags, lastEvent:s.lastEvent };
+      });
+      return {ok:true, data:{ count:items.length, limited:false, items:items }};
+    }
+    if(action==='newCards'){
+      var days = body.days||7, onlyUnorganized = !!body.onlyUnorganized;
+      var nitems = MOCK_DB.persons.filter(function(p){ return onlyUnorganized ? !p.crm.organized : true; }).map(summaryOfMock);
+      return {ok:true, data:{ count:nitems.length, days:days, items:nitems }};
+    }
+    if(action==='person'){
+      var pp = findMockPerson(body.id); if(!pp) return {ok:false, error:'not_found'};
+      return {ok:true, data:{ card:pp.card, crm:pp.crm, sns:pp.sns, histories:pp.histories }};
+    }
+    if(action==='savePerson'){
+      var ps = findMockPerson(body.id); if(!ps) return {ok:false, error:'not_found'};
+      Object.assign(ps.crm, body.crm||{});
+      ps.crm.organized = (body.organized===undefined) ? true : !!body.organized;
+      return {ok:true, data:{ id:ps.card.id, organized:ps.crm.organized, updatedAt: todayStr()+' 12:00:00' }};
+    }
+    if(action==='markOrganized'){
+      var pm = findMockPerson(body.id); if(!pm) return {ok:false, error:'not_found'};
+      pm.crm.organized = !!body.organized;
+      return {ok:true, data:{ id:pm.card.id, organized:pm.crm.organized }};
+    }
+    if(action==='addContact'){
+      var pc = findMockPerson(body.id); if(!pc) return {ok:false, error:'not_found'};
+      var dup = pc.histories.some(function(h){ return h.contactDate===body.contactDate && h.eventName===(body.eventName||'') && h.contactType===body.contactType; });
+      var label1 = formatMockLabel(body.eventName, body.contactDate);
+      if(!dup){
+        pc.histories.unshift({ contactDate:body.contactDate, eventName:body.eventName||'', contactType:body.contactType,
+          memo:body.memo||'', followUp:!!body.followUp, followDate:body.followDate||'', createdAt:todayStr()+' 12:00:00', label:label1 });
+      }
+      return {ok:true, data:{ created:!dup, duplicate:dup, label:label1 }};
+    }
+    if(action==='eventNames'){
+      var map={};
+      MOCK_DB.persons.forEach(function(p){ p.histories.forEach(function(h){ if(h.eventName){ map[h.eventName]=(map[h.eventName]||0)+1; } }); });
+      var items2 = Object.keys(map).map(function(k){ return {name:k, count:map[k]}; }).sort(function(a,b){ return b.count-a.count; });
+      return {ok:true, data:{ items:items2 }};
+    }
+    if(action==='bulkContactPreview'){
+      return {ok:true, data:{ targetCount:3, willOverwriteCount:1, alreadyHistoryCount:0, targetIds:['M00001','M00003','M00004'] }};
+    }
+    if(action==='bulkContactApply'){
+      var label2 = formatMockLabel(body.eventName, body.date);
+      var ids = ['M00001','M00003','M00004'];
+      ids.forEach(function(id){
+        var p2=findMockPerson(id); if(!p2) return;
+        if(!p2.card.exchanged || body.overwrite){ p2.card.exchanged = body.date; }
+        var dup2 = p2.histories.some(function(h){ return h.contactDate===body.date && h.eventName===(body.eventName||'') && h.contactType==='名刺交換'; });
+        if(!dup2){ p2.histories.unshift({ contactDate:body.date, eventName:body.eventName||'', contactType:'名刺交換', memo:'', followUp:false, followDate:'', createdAt:todayStr()+' 12:00:00', label:label2 }); }
+      });
+      return {ok:true, data:{ targetCount:3, updatedDateCount:2, createdHistoryCount:3, skippedDupCount:0, label:label2 }};
+    }
+    if(action==='snsDetectFromSite'){
+      var pd = findMockPerson(body.id); if(!pd) return {ok:false, error:'not_found'};
+      if(!pd.card.url) return {ok:true, data:{ siteUrl:'', candidates:[] }};
+      return {ok:true, data:{ siteUrl:pd.card.url, candidates:[
+        { platform:'facebook', url:'https://facebook.com/demo_'+pd.card.id, source:'公式サイト', sourceUrl:pd.card.url },
+        { platform:'instagram', url:'https://instagram.com/demo_'+pd.card.id, source:'公式サイト', sourceUrl:pd.card.url }
+      ]}};
+    }
+    if(action==='snsSearchLinks'){
+      var pl = findMockPerson(body.id); if(!pl) return {ok:false, error:'not_found'};
+      var q2 = encodeURIComponent(pl.card.name+' '+pl.card.company);
+      return {ok:true, data:{ query:pl.card.name+' '+pl.card.company, links:[
+        { platform:'facebook', label:'Facebook', google:'https://www.google.com/search?q='+q2+'+facebook', native:'https://www.facebook.com/search/top/?q='+q2 },
+        { platform:'instagram', label:'Instagram', google:'https://www.google.com/search?q='+q2+'+instagram', native:null },
+        { platform:'linkedin', label:'LinkedIn', google:'https://www.google.com/search?q='+q2+'+linkedin', native:'https://www.linkedin.com/search/results/all/?keywords='+q2 },
+        { platform:'x', label:'X', google:'https://www.google.com/search?q='+q2+'+twitter', native:'https://twitter.com/search?q='+q2 }
+      ]}};
+    }
+    if(action==='snsSave'){
+      var psv = findMockPerson(body.id); if(!psv) return {ok:false, error:'not_found'};
+      var url = body.url||'';
+      if(!/^https:\/\//.test(url)) return {ok:false, error:'bad_url'};
+      var domains = {facebook:'facebook.com', instagram:'instagram.com', linkedin:'linkedin.com', x:'x.com', youtube:'youtube.com'};
+      var dom = domains[body.platform];
+      if(dom && url.indexOf(dom)===-1 && !(body.platform==='x' && url.indexOf('twitter.com')>=0)){ return {ok:false, error:'bad_domain'}; }
+      psv.sns[body.platform+'Url'] = url;
+      psv.sns.snsCheckedAt = todayStr()+' 12:00:00';
+      return {ok:true, data:{ id:psv.card.id, platform:body.platform, url:url, snsCheckedAt:psv.sns.snsCheckedAt }};
+    }
+    if(action==='snsRemove'){
+      var pr = findMockPerson(body.id); if(!pr) return {ok:false, error:'not_found'};
+      pr.sns[body.platform+'Url'] = '';
+      return {ok:true, data:{ id:pr.card.id, platform:body.platform }};
+    }
+    return {ok:false, error:'unknown_action'};
   }
 </script>
 </body>
