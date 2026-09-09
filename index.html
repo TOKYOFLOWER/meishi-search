@@ -230,6 +230,17 @@
   .searchlinks a{font-size:12px; padding:7px 12px; border-radius:999px; border:1px solid var(--line);
                  color:var(--ink); text-decoration:none; background:var(--paper);}
   .dimtext{color:var(--muted); font-size:12.5px;}
+
+  /* --- 処理中オーバーレイ --- */
+  #busyOverlay{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:250; display:flex;
+               flex-direction:column; align-items:center; justify-content:center; gap:14px;
+               pointer-events:auto;}
+  #busyOverlay[hidden]{display:none;}
+  #busyOverlay .busyspin{width:56px; height:56px; border-radius:50%;
+               border:5px solid rgba(255,255,255,.35); border-top-color:var(--accent);
+               animation:busyspin .8s linear infinite;}
+  #busyOverlay .busymsg{color:#fff; font-size:15px; text-align:center; padding:0 24px;}
+  @keyframes busyspin{ to{ transform:rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -375,6 +386,7 @@
 
 <div id="toast"></div>
 <div id="modalRoot"></div>
+<div id="busyOverlay" hidden><div class="busyspin"></div><div class="busymsg" id="busyMsg"></div></div>
 <datalist id="eventNamesList"></datalist>
 
 <script>
@@ -435,17 +447,57 @@
   function fmtDate(iso){ if(!iso) return ''; return String(iso).slice(0,10).replace(/-/g,'/'); }
   function safeUrl(u){ return (u && /^https?:\/\//.test(String(u))) ? esc(u) : ''; }
 
+  // ---- 処理中オーバーレイ（カウンタ方式・ネスト可） ----
+  var busyCount = 0;
+  function showBusy(message){
+    busyCount++;
+    EL('busyMsg').textContent = message || '処理中…';
+    EL('busyOverlay').hidden = false;
+  }
+  function hideBusy(){
+    busyCount = Math.max(0, busyCount - 1);
+    if(busyCount === 0){ EL('busyOverlay').hidden = true; }
+  }
+  // action → 既定の busyMessage
+  var BUSY_MESSAGES = {
+    ping: '確認中…',
+    bulkContactPreview: '対象を確認しています…',
+    bulkContactApply: '交換情報を設定しています…',
+    savePerson: '保存中…',
+    markOrganized: '保存中…',
+    addContact: '保存中…',
+    snsSave: '保存中…',
+    snsRemove: '保存中…',
+    snsMarkChecked: '保存中…',
+    search: '検索中…',
+    newCards: '検索中…',
+    person: '読み込み中…',
+    snsDetectFromSite: '公式サイトを確認中…',
+    snsSearchLinks: '読み込み中…',
+    eventNames: '読み込み中…',
+    tags: '読み込み中…',
+    stats: '読み込み中…',
+    filters: '読み込み中…'
+  };
+  function busyMessageFor(action){ return BUSY_MESSAGES[action] || '処理中…'; }
+
   // API: POST(text/plain)でプリフライト回避。creds同梱。mock=1の時はネットワークを使わない。
-  async function api(action, extra){
-    if(MOCK){ return mockApi(action, extra||{}); }
-    var creds = getCreds() || {};
-    var body = Object.assign({ action:action, user:creds.user, pass:creds.pass }, extra||{});
-    var res = await fetch(GAS_URL, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify(body)
-    });
-    return await res.json();
+  // opts.busyMessage で個別メッセージを指定可（無指定時は action ごとの既定メッセージ）
+  async function api(action, extra, opts){
+    showBusy((opts && opts.busyMessage) || busyMessageFor(action));
+    try {
+      if(MOCK){ return await mockApi(action, extra||{}); }
+      var creds = getCreds() || {};
+      var body = Object.assign({ action:action, user:creds.user, pass:creds.pass }, extra||{});
+      var res = await fetch(GAS_URL, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify(body)
+      });
+      return await res.json();
+    } finally {
+      hideBusy();
+    }
   }
 
   function toast(msg){
@@ -764,6 +816,7 @@
 
   // ---- 一括設定モーダル ----
   EL('bulkOpenBtn').onclick = openBulkModal;
+  var bulkApplying = false; // 二重送信防止フラグ
 
   function openBulkModal(){
     var today = todayStr();
@@ -787,17 +840,24 @@
       + '</div>';
     openModal(html);
     var previewData = null;
+    var previewing = false; // プレビュー中の二重送信防止フラグ
+    bulkApplying = false;
     document.getElementById('bkPreviewBtn').onclick = function(){
+      if(previewing || bulkApplying) return;
       var scope = document.querySelector('input[name="bkScope"]:checked').value;
       var date = document.getElementById('bkDate').value;
       var eventName = document.getElementById('bkEvent').value.trim();
       if(!date){ toast('名刺交換日を入力してください'); return; }
       var body = { scope:scope, days:newState.days, date:date, eventName:eventName };
       if(scope==='ids') body.ids = checkedIds;
+      previewing = true;
+      document.getElementById('bkPreviewBtn').disabled = true;
       document.getElementById('bkPreview').textContent = '確認中…';
       document.getElementById('bkApplyBtn').disabled = true;
       document.getElementById('bkConfirmArea').innerHTML='';
       api('bulkContactPreview', body).then(function(r){
+        previewing = false;
+        document.getElementById('bkPreviewBtn').disabled = false;
         if(!r || !r.ok){
           if(r&&r.error==='auth'){ doLogout(); return; }
           document.getElementById('bkPreview').textContent='エラーが発生しました';
@@ -810,7 +870,7 @@
       });
     };
     document.getElementById('bkApplyBtn').onclick = function(){
-      if(!previewData) return;
+      if(!previewData || bulkApplying) return;
       if(previewData.res.willOverwriteCount > 0){ renderOverwriteConfirm(previewData); }
       else { doBulkApply(previewData, false); }
     };
@@ -819,14 +879,31 @@
     var area = document.getElementById('bkConfirmArea');
     area.innerHTML = '<div class="confirmbox">既存の交換日を上書きしますか？（'+previewData.res.willOverwriteCount+'件）'
       + '<div class="row2"><button type="button" id="bkNoOverwrite">上書きしない</button><button type="button" class="danger" id="bkYesOverwrite">上書きする</button></div></div>';
-    document.getElementById('bkNoOverwrite').onclick = function(){ doBulkApply(previewData, false); };
-    document.getElementById('bkYesOverwrite').onclick = function(){ doBulkApply(previewData, true); };
+    document.getElementById('bkNoOverwrite').onclick = function(){ if(bulkApplying) return; doBulkApply(previewData, false); };
+    document.getElementById('bkYesOverwrite').onclick = function(){ if(bulkApplying) return; doBulkApply(previewData, true); };
+  }
+  function setBulkButtonsDisabled(disabled){
+    ['bkPreviewBtn','bkApplyBtn','bkNoOverwrite','bkYesOverwrite'].forEach(function(idn){
+      var el = document.getElementById(idn);
+      if(el) el.disabled = disabled;
+    });
   }
   function doBulkApply(previewData, overwrite){
+    if(bulkApplying) return;
+    bulkApplying = true;
+    setBulkButtonsDisabled(true);
     var body = { scope:previewData.scope, days:newState.days, date:previewData.date, eventName:previewData.eventName, overwrite:overwrite };
     if(previewData.scope==='ids') body.ids = previewData.ids;
-    api('bulkContactApply', body).then(function(r){
-      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('適用に失敗しました'); return; }
+    var n = previewData.res && previewData.res.targetCount;
+    var busyMessage = n ? (n+'件に交換情報を設定しています…') : '交換情報を設定しています…';
+    api('bulkContactApply', body, { busyMessage: busyMessage }).then(function(r){
+      bulkApplying = false;
+      if(!r || !r.ok){
+        if(r&&r.error==='auth'){doLogout();return;}
+        toast('適用に失敗しました');
+        setBulkButtonsDisabled(false);
+        return;
+      }
       closeModal();
       toast('交換日 更新 '+r.data.updatedDateCount+'件／履歴 作成 '+r.data.createdHistoryCount+'件／重複スキップ '+r.data.skippedDupCount+'件');
       saveSession({ date: previewData.date, eventName: previewData.eventName });

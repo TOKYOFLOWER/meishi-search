@@ -566,7 +566,9 @@ function addCardToSheet(card) {
     var rl = roleLevel_(title);
     var ind = industry_(company + ' ' + department + ' ' + title + ' ' + url);
     var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
-    var exchanged = scannedAt ? scannedAt.slice(0, 10) : today;
+    // 名刺交換日はスキャン日ではないので取込時は空欄にし、新着画面の「交換情報を一括設定」で入れる
+    // （scanned_at は互換のため受け取るが交換日には使わない）
+    var exchanged = '';
 
     var record = {
       'id': newId,
@@ -640,14 +642,28 @@ function test_addCard_() {
     source_file: '_test.png',
     scanned_at: Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd')
   };
+  var checks = [];
   var res = addCardToSheet(card);
   Logger.log(JSON.stringify(res));
+  checks.push({ name: 'addCard_ok', ok: !!(res.ok && !res.duplicate), detail: JSON.stringify(res) });
   if (res.ok && !res.duplicate) {
-    getSheet_().deleteRow(res.row);
-    Logger.log('削除: row ' + res.row);
+    var sh = getSheet_();
+    var header = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    var c = colIndex_(header);
+    var row = sh.getRange(res.row, 1, 1, header.length).getValues()[0];
+    var ex = String(row[c['名刺交換日']] == null ? '' : row[c['名刺交換日']]).trim();
+    var imp = isoDate_(row[c['取込日']]);
+    checks.push({ name: 'exchanged_is_empty', ok: ex === '', detail: JSON.stringify(ex) });
+    checks.push({ name: 'importedAt_is_today', ok: imp === Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd'), detail: imp });
+    checks.push({ name: 'batchId_set', ok: c['importBatchId'] === undefined || /^scan-\d{8}$/.test(String(row[c['importBatchId']])), detail: String(row[c['importBatchId']]) });
+    deleteTestRows_([res.id]);
+    Logger.log('削除: id ' + res.id);
   } else if (res.ok && res.duplicate) {
     Logger.log('重複として検出されました（row ' + res.row + '）。削除は行いません。');
   }
+  var result = { pass: checks.every(function (x) { return x.ok; }), checks: checks };
+  Logger.log(JSON.stringify(result));
+  return result;
 }
 
 /* ==================================================================
@@ -1128,22 +1144,33 @@ function bulkContactApply_(input) {
   lock.waitLock(10000);
   try {
     setupSnsBulkColumns_();
-    var t = resolveBulkTargets_(input);
+    var t0 = Date.now();
+    var t = resolveBulkTargets_(input); // 名刺DB は readAll_ で1回だけ読む
     var c = t.c, sheet = t.sheet;
     var exCol = c['名刺交換日'] + 1;
-    var updatedDateCount = 0;
 
+    // 交換日: メモリ上で書き込み対象行を決め、連続する行のまとまり（ラン）ごとに1回の setValues で書く
+    // （対象外の行には触れない。新着は末尾に固まるので通常1回で済む）
+    var writeRows = [];
     t.targets.forEach(function (x) {
       var raw = String(x.r[c['名刺交換日']] || '').trim();
       var exIso = isoDate_(x.r[c['名刺交換日']]);
-      var shouldWrite = false;
-      if (raw === '') shouldWrite = true;
-      else if (overwrite && exIso !== iso) shouldWrite = true;
-      if (shouldWrite) {
-        sheet.getRange(x.row, exCol).setNumberFormat('@').setValue(iso);
-        updatedDateCount++;
-      }
+      if (raw === '' || (overwrite && exIso !== iso)) writeRows.push(x.row);
     });
+    writeRows.sort(function (a, b) { return a - b; });
+    var updatedDateCount = writeRows.length;
+    var runStart = -1, runLen = 0;
+    var flushRun = function () {
+      if (runLen <= 0) return;
+      var vals = [];
+      for (var k = 0; k < runLen; k++) vals.push([iso]);
+      sheet.getRange(runStart, exCol, runLen, 1).setNumberFormat('@').setValues(vals);
+    };
+    writeRows.forEach(function (row) {
+      if (runStart >= 0 && row === runStart + runLen) { runLen++; return; }
+      flushRun(); runStart = row; runLen = 1;
+    });
+    flushRun();
 
     var histD = readSheet_(HISTORY_SHEET);
     var hc = histD.c, header = histD.header;
@@ -1173,6 +1200,7 @@ function bulkContactApply_(input) {
     }
 
     var label = formatContactLabel_(eventName, iso);
+    Logger.log('bulkContactApply: ' + t.targets.length + '件 / 交換日更新 ' + updatedDateCount + ' / 履歴作成 ' + createdHistoryCount + ' / 重複 ' + skippedDupCount + ' / ' + (Date.now() - t0) + 'ms');
     return { ok: true, data: { targetCount: t.targets.length, updatedDateCount: updatedDateCount, createdHistoryCount: createdHistoryCount, skippedDupCount: skippedDupCount, label: label } };
   } finally {
     lock.releaseLock();

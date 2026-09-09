@@ -96,6 +96,13 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 
 一時 action（本番実行後に削除）: `_setupColumns`（列追加）／`_runTests`（test_bulk_ と test_sns_ を実行し結果を返す）
 
+## 2026-09-09 追加変更（処理中オーバーレイ／一括処理高速化／取込時交換日の空欄化）
+
+- index.html: `showBusy(message)` / `hideBusy()` を `api()` に組み込み、全 API 呼び出しで自動表示・finally で必ず非表示。一括設定モーダルは送信中ボタン無効化＋二重送信防止
+- Code.js `bulkContactApply_`: 名刺DB は1回読み、交換日は書き込み対象行を連続ランごとに1回の `setValues`（対象外行には触れない）、接触履歴は末尾に1回の `setValues`。重複判定は既存履歴を1回読んで Set 化。Logger に処理時間を出力
+- Code.js `addCardToSheet`: 名刺交換日を空欄で登録（従来はスキャン日／取込日を入れていた）。取込日・importBatchId は従来どおり。既存行は変更しない。`scanned_at` は互換のため受け取るが未使用
+- 検証: GAS の SpreadsheetApp をメモリ上でスタブした Node ハーネス（tests/gas_harness.js（実行: node tests/gas_harness.js。非連続行の検証は tests/gas_harness_bulk_runs.js））で `test_bulk_` `test_addCard_` `test_follow_` `test_sns_` が全項目合格、テスト行の残留なし、既存行の値不変を確認。実シートでの再実行はデプロイ後に GAS エディタから
+
 ## 追加列一覧（すべて末尾追加。既存列の削除・並べ替えなし）
 
 | シート | 追加列 | 備考 |
