@@ -92,7 +92,7 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 - date は 'YYYY-MM-DD' に正規化（'2026/09/08' '2026.9.8' も受理）。不正なら `error:'bad_date'`
 - 表示ラベル `formatContactLabel_(eventName, iso)` → `守成 青山デイライト 260908`（内部保存には使わない）
 - 検索 q 追加: `eventName`（部分一致）, `contactFrom`, `contactTo`（'YYYY-MM-DD'）, `tag`（完全一致）, `followDue:true`（要フォロー期限到来）。
-- 要フォロー（stats.followCount／search followDue）の定義: 人物管理.nextActionDate ≤ 今日、または 接触履歴.followUp=TRUE かつ followDate ≤ 今日。指定時のみ接触履歴/人物管理を結合。従来パラメータのみの挙動は不変。items に `tags:[]`, `lastEvent` を追加
+- 要フォロー（stats.followCount／search followDue）の定義: 人物管理.nextActionDate ≤ 今日、または 人物管理.tags に「要フォロー」を含む、または 接触履歴.followUp=TRUE かつ followDate ≤ 今日（`followDueSet_`。検証は `test_follow_`：日付のみ／タグのみ／両方なし の3件で該当2件）。指定時のみ接触履歴/人物管理を結合。従来パラメータのみの挙動は不変。items に `tags:[]`, `lastEvent` を追加
 
 一時 action（本番実行後に削除）: `_setupColumns`（列追加）／`_runTests`（test_bulk_ と test_sns_ を実行し結果を返す）
 

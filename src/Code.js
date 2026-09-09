@@ -958,14 +958,18 @@ function addContactToSheet_(input) {
   }
 }
 
-// 要フォロー（期限到来）の contactId 集合:
-//   人物管理.nextActionDate <= 今日、または 接触履歴.followUp=TRUE かつ followDate <= 今日
+// 要フォローの contactId 集合:
+//   人物管理.nextActionDate <= 今日、または 人物管理.tags に「要フォロー」を含む、
+//   または 接触履歴.followUp=TRUE かつ followDate <= 今日
+var FOLLOW_TAG = '要フォロー';
 function followDueSet_(pm, hm) {
   var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
   var set = {};
   pm.rows.forEach(function (r) {
+    var id = String(r[pm.c['contactId']]);
     var nd = isoDate_(r[pm.c['nextActionDate']]);
-    if (nd && nd <= today) set[String(r[pm.c['contactId']])] = true;
+    if (nd && nd <= today) set[id] = true;
+    if (parseTags_(r[pm.c['tags']]).indexOf(FOLLOW_TAG) >= 0) set[id] = true;
   });
   Object.keys(hm.byId).forEach(function (id) {
     var due = hm.byId[id].some(function (r) {
@@ -1435,6 +1439,69 @@ function test_bulk_() {
     checks.push({ name: 'isoDate_yymmdd_reject', ok: isoDate_('260908') === '', detail: JSON.stringify(isoDate_('260908')) });
     checks.push({ name: 'formatContactLabel', ok: formatContactLabel_('守成 青山デイライト', '2026-09-08') === '守成 青山デイライト 260908', detail: formatContactLabel_('守成 青山デイライト', '2026-09-08') });
 
+  } catch (e) {
+    checks.push({ name: 'exception', ok: false, detail: String(e) });
+  } finally {
+    deleteTestRows_(testIds);
+  }
+  var pass = checks.length > 0 && checks.every(function (x) { return x.ok; });
+  var result = { pass: pass, checks: checks };
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+// 要フォロー判定テスト: (a)日付のみ (b)タグのみ (c)両方なし の3件で該当が 2 件になること。終了後にテスト行を削除
+function test_follow_() {
+  var checks = [];
+  var testIds = [];
+  try {
+    setupSnsBulkColumns_();
+    var sh = getSheet_();
+    var d = readAll_(), c = colIndex_(d.header);
+    var header = d.header;
+    var lastNum = 0;
+    d.rows.forEach(function (r) {
+      var m = String(r[c['id']]).match(/^M(\d+)$/);
+      if (m) lastNum = Math.max(lastNum, parseInt(m[1], 10));
+    });
+    var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    var yesterday = addDaysIso_(today, -1);
+    var cases = [
+      { name: 'テスト 日付', crm: { nextActionDate: yesterday, tags: [] } },
+      { name: 'テスト タグ', crm: { nextActionDate: '', tags: [FOLLOW_TAG] } },
+      { name: 'テスト なし', crm: { nextActionDate: '', tags: [] } }
+    ];
+    var appendRows = [];
+    cases.forEach(function (cs) {
+      lastNum++;
+      var id = 'M' + ('00000' + lastNum).slice(-5);
+      testIds.push(id);
+      cs.id = id;
+      var record = { 'id': id, '会社名': 'テスト株式会社_follow', '氏名': cs.name, '姓': 'テスト', '名': cs.name.split(' ')[1], '取込日': today, 'importBatchId': 'test-follow' };
+      appendRows.push(header.map(function (h) { return record.hasOwnProperty(h) ? record[h] : ''; }));
+    });
+    var startRow = sh.getLastRow() + 1;
+    var idxToday = header.indexOf('取込日');
+    if (idxToday >= 0) sh.getRange(startRow, idxToday + 1, appendRows.length, 1).setNumberFormat('@');
+    sh.getRange(startRow, 1, appendRows.length, header.length).setValues(appendRows);
+
+    cases.forEach(function (cs) {
+      var r = savePersonToSheet_({ id: cs.id, crm: cs.crm, organized: false });
+      checks.push({ name: 'save_' + cs.name, ok: !!r.ok, detail: JSON.stringify(r) });
+    });
+
+    var set = followDueSet_(loadPersonMap_(), loadHistoryMap_());
+    var hit = testIds.filter(function (id) { return !!set[id]; });
+    checks.push({ name: 'follow_count_is_2', ok: hit.length === 2, detail: JSON.stringify(hit) });
+    checks.push({ name: 'date_case_hit', ok: !!set[cases[0].id], detail: cases[0].id });
+    checks.push({ name: 'tag_case_hit', ok: !!set[cases[1].id], detail: cases[1].id });
+    checks.push({ name: 'none_case_not_hit', ok: !set[cases[2].id], detail: cases[2].id });
+
+    var st = computeStats_();
+    checks.push({ name: 'stats_followCount_ge_2', ok: st.followCount >= 2, detail: JSON.stringify(st) });
+    var sr = searchCards({ followDue: true });
+    var found = sr.items.filter(function (it) { return testIds.indexOf(it.id) >= 0; }).map(function (it) { return it.id; });
+    checks.push({ name: 'search_followDue_hits_2', ok: found.length === 2, detail: JSON.stringify(found) });
   } catch (e) {
     checks.push({ name: 'exception', ok: false, detail: String(e) });
   } finally {
