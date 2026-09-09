@@ -367,6 +367,8 @@
     <div class="snsSection" id="snsCurrentSection">
       <h4>確定済み</h4>
       <div id="snsCurrentBody"></div>
+      <div class="dimtext" id="snsCheckedState" style="margin-top:8px;"></div>
+      <button type="button" class="sectionbtn" id="snsMarkCheckedBtn">候補なしで確認済みにする</button>
     </div>
   </section>
 </div>
@@ -382,7 +384,7 @@
   var MOCK = /(?:^|[?&])mock=1(?:&|$)/.test(location.search);
 
   var EL = function(id){ return document.getElementById(id); };
-  var state = { pref:'', ind:'', role:'', eventName:'', contactFrom:'', contactTo:'', tag:'' };
+  var state = { pref:'', ind:'', role:'', eventName:'', contactFrom:'', contactTo:'', tag:'', followDue:false };
   var QUICK = [
     {label:'経営者', role:'経営者'},
     {label:'🌸 花卉・園芸', ind:'花卉・園芸'},
@@ -394,6 +396,16 @@
   var IMPORTANCE = ['高','中','低'];
   var RELATIONSHIP = ['初対面','知人','取引先','友人','紹介者'];
   var QUICK_TAGS = ['守成クラブ','経営者','要フォロー','花需要','法人ギフト','EC','IT','AI','業務効率化','販売代理店候補','協業候補','紹介者'];
+  // タグ候補（tags action: 初期12件＋人物管理 tags の DISTINCT）。取得失敗時は QUICK_TAGS のみ
+  var TAG_CANDIDATES = QUICK_TAGS.slice();
+  function loadTagCandidates(){
+    return api('tags').then(function(r){
+      if(r && r.ok && r.data && r.data.items){
+        var names = r.data.items.map(function(x){ return x.name; });
+        TAG_CANDIDATES = QUICK_TAGS.concat(names.filter(function(n){ return QUICK_TAGS.indexOf(n)===-1; }));
+      }
+    }).catch(function(){});
+  }
   var CONTACT_TYPES = ['名刺交換','面談','電話','メール','紹介','その他'];
   var PLATFORM_ORDER = ['facebook','instagram','linkedin','x','youtube','other'];
   var PLATFORM_LABELS = { facebook:'Facebook', instagram:'Instagram', linkedin:'LinkedIn', x:'X', youtube:'YouTube', other:'その他' };
@@ -483,6 +495,7 @@
     if(!f || !f.ok){ doLogout(); return; }
     initFilters(f.data);
     await loadEventNames();
+    loadTagCandidates();
     EL('list').onclick = handleListClick;
     if(!location.hash){ location.hash = '#home'; }
     route();
@@ -502,7 +515,7 @@
       EL('backBtn').hidden = false;
       EL('headerTitle').textContent = titleMap.search;
       if(pendingSearchQuery){
-        state = { pref:'', ind:'', role:'', eventName:'', contactFrom:'', contactTo:'', tag:'' };
+        state = { pref:'', ind:'', role:'', eventName:'', contactFrom:'', contactTo:'', tag:'', followDue:false };
         Object.assign(state, pendingSearchQuery); pendingSearchQuery=null;
         EL('kw').value=''; EL('eventNameInput').value = state.eventName||'';
         sync(); renderChips(); renderEvChips();
@@ -538,7 +551,7 @@
   // ---- 入口カード ----
   EL('entryNew').onclick = function(){ location.hash='#new'; };
   EL('entryUnorg').onclick = function(){ pendingNewOptions={days:30, onlyUnorganized:true}; location.hash='#new'; };
-  EL('entryFollow').onclick = function(){ pendingSearchQuery={tag:'要フォロー'}; location.hash='#search'; };
+  EL('entryFollow').onclick = function(){ pendingSearchQuery={followDue:true}; location.hash='#search'; };
 
   function loadStats(){
     api('stats').then(function(r){
@@ -615,7 +628,7 @@
     this.textContent = row.hidden ? '詳細（期間で絞り込み）▾' : '詳細（期間で絞り込み）▲';
   };
   EL('clearBtn').onclick=function(){
-    EL('kw').value=''; state={pref:'',ind:'',role:'',eventName:'',contactFrom:'',contactTo:'',tag:''};
+    EL('kw').value=''; state={pref:'',ind:'',role:'',eventName:'',contactFrom:'',contactTo:'',tag:'',followDue:false};
     sync(); renderChips(); renderEvChips();
     EL('eventNameInput').value=''; EL('contactFrom').value=''; EL('contactTo').value='';
     EL('dateRow').hidden=true; EL('toggleDetail').textContent='詳細（期間で絞り込み）▾';
@@ -629,8 +642,9 @@
     state.contactFrom = EL('contactFrom').value;
     state.contactTo = EL('contactTo').value;
     var q = { keyword:EL('kw').value, pref:state.pref, industry:state.ind, roleLevel:state.role,
-              eventName:state.eventName, contactFrom:state.contactFrom, contactTo:state.contactTo, tag:state.tag };
-    var hasAny = q.keyword || q.pref || q.industry || q.roleLevel || q.eventName || q.tag;
+              eventName:state.eventName, contactFrom:state.contactFrom, contactTo:state.contactTo, tag:state.tag,
+              followDue: !!state.followDue };
+    var hasAny = q.keyword || q.pref || q.industry || q.roleLevel || q.eventName || q.tag || q.followDue;
     if(!hasAny){ EL('metaEl').textContent=''; return; }
     EL('list').innerHTML='<div class="spin">検索中…</div>';
     try {
@@ -643,7 +657,7 @@
     }
   }
   function render(res){
-    EL('metaEl').textContent = res.count + ' 件' + (res.limited ? '（上位のみ表示。絞り込んでください）':'');
+    EL('metaEl').textContent = (state.followDue ? '要フォロー（期限到来）: ' : '') + res.count + ' 件' + (res.limited ? '（上位のみ表示。絞り込んでください）':'');
     if(!res.count){ EL('list').innerHTML='<div class="empty"><b>該当なし</b>条件を変えてお試しください。</div>'; return; }
     EL('list').innerHTML = res.items.map(card).join('');
   }
@@ -833,13 +847,13 @@
   function buildCrmFormHtml(crm){
     crm = crm||{};
     var tags = crm.tags||[];
-    var customTags = tags.filter(function(t){ return QUICK_TAGS.indexOf(t)===-1; });
+    var customTags = tags.filter(function(t){ return TAG_CANDIDATES.indexOf(t)===-1; });
     var customChipsHtml = customTags.map(function(v){ return '<div class="chip on custom">'+esc(v)+'</div>'; }).join('');
     return ''
       + '<div class="crmform">'
       + '<div class="fgroup"><label>重要度</label><div class="chipwrap" data-field="importance">'+chipsHtmlSingle(IMPORTANCE, crm.importance)+'</div></div>'
       + '<div class="fgroup"><label>関係性</label><div class="chipwrap" data-field="relationship">'+chipsHtmlSingle(RELATIONSHIP, crm.relationship)+'</div></div>'
-      + '<div class="fgroup"><label>クイックタグ</label><div class="chipwrap" data-field="tags">'+chipsHtmlMulti(QUICK_TAGS, tags)+customChipsHtml+'</div>'
+      + '<div class="fgroup"><label>クイックタグ</label><div class="chipwrap" data-field="tags">'+chipsHtmlMulti(TAG_CANDIDATES, tags)+customChipsHtml+'</div>'
       + '<div class="tagaddrow"><input type="text" class="taginput" placeholder="自由タグを追加してEnter"><button type="button" class="tagaddbtn">追加</button></div></div>'
       + '<div class="fgroup"><label>相手のニーズ</label><input type="text" class="f-needs" value="'+esc(crm.needs)+'"></div>'
       + '<div class="fgroup"><label>次回アクション</label><input type="text" class="f-nextAction" value="'+esc(crm.nextAction)+'"></div>'
@@ -993,6 +1007,7 @@
 
     document.getElementById('rvSaveNext').onclick = function(){
       api('savePerson', { id:id, crm: collectCrmForm(EL('reviewFormBox')), organized:true }).then(function(r){
+        if(r && r.ok) loadTagCandidates();
         if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('保存に失敗しました'); return; }
         markLocalOrganized(id, true);
         toast('保存しました');
@@ -1112,6 +1127,7 @@
       + '<button type="button" id="pOrganizeBtn">'+(organized?'未整理に戻す':'整理済みにする')+'</button>';
     document.getElementById('pSaveBtn').onclick = function(){
       api('savePerson', { id:id, crm: collectCrmForm(EL('personFormBox')), organized: organized }).then(function(r){
+        if(r && r.ok) loadTagCandidates();
         if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('保存に失敗しました'); return; }
         toast('保存しました');
       });
@@ -1153,8 +1169,19 @@
       var card = r.data.card;
       EL('snsPersonHead').innerHTML = '<div class="name3">'+esc(card.name||'(氏名不明)')+'</div><div class="sub3">'+esc([card.company, card.title].filter(Boolean).join(' / '))+'</div>';
       renderSnsCurrent(id, r.data.sns);
+      var checkedAt = r.data.sns && r.data.sns.snsCheckedAt;
+      EL('snsCheckedState').textContent = checkedAt ? ('SNS確認済み（'+checkedAt+'）') : 'SNS未確認';
+      EL('snsMarkCheckedBtn').hidden = !!checkedAt;
     });
   }
+  EL('snsMarkCheckedBtn').onclick = function(){
+    var id = CURRENT_SNS_ID; if(!id) return;
+    api('snsMarkChecked', { id:id }).then(function(r){
+      if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('更新に失敗しました'); return; }
+      toast('SNS確認済みにしました');
+      loadSnsPersonHead(id);
+    });
+  };
   function renderSnsCurrent(id, sns){
     sns = sns||{};
     var any=false;
@@ -1291,7 +1318,8 @@
     if(action==='stats'){
       var unorg = MOCK_DB.persons.filter(function(p){ return !p.crm.organized; }).length;
       var follow = MOCK_DB.persons.filter(function(p){
-        return (p.crm.tags||[]).indexOf('要フォロー')>=0 || p.histories.some(function(h){ return h.followUp; });
+        var td0 = todayStr();
+        return (p.crm.nextActionDate && p.crm.nextActionDate <= td0) || p.histories.some(function(h){ return h.followUp && h.followDate && h.followDate <= td0; });
       }).length;
       return {ok:true, data:{ total: MOCK_DB.persons.length, newCount: MOCK_DB.persons.length, unorganizedCount: unorg, followCount: follow, days:7 }};
     }
@@ -1308,6 +1336,11 @@
         if(q.roleLevel && p.card.roleLevel!==q.roleLevel) return false;
         if(q.eventName && p.histories.filter(function(h){ return h.eventName.indexOf(q.eventName)>=0; }).length===0) return false;
         if(q.tag && s.tags.indexOf(q.tag)===-1) return false;
+        if(q.followDue){
+          var td = todayStr();
+          var due = (p.crm.nextActionDate && p.crm.nextActionDate <= td) || p.histories.some(function(h){ return h.followUp && h.followDate && h.followDate <= td; });
+          if(!due) return false;
+        }
         return true;
       }).map(function(p){
         var s = summaryOfMock(p);
@@ -1346,6 +1379,19 @@
           memo:body.memo||'', followUp:!!body.followUp, followDate:body.followDate||'', createdAt:todayStr()+' 12:00:00', label:label1 });
       }
       return {ok:true, data:{ created:!dup, duplicate:dup, label:label1 }};
+    }
+    if(action==='tags'){
+      var cnt = {};
+      MOCK_DB.persons.forEach(function(p){ (p.crm.tags||[]).forEach(function(t){ cnt[t]=(cnt[t]||0)+1; }); });
+      var items = QUICK_TAGS.map(function(t){ return {name:t, count:cnt[t]||0, quick:true}; });
+      Object.keys(cnt).forEach(function(t){ if(QUICK_TAGS.indexOf(t)===-1) items.push({name:t, count:cnt[t], quick:false}); });
+      return {ok:true, data:{ items: items }};
+    }
+    if(action==='snsMarkChecked'){
+      var pm = MOCK_DB.persons.filter(function(p){ return p.card.id===body.id; })[0];
+      if(!pm) return {ok:false, error:'not_found'};
+      pm.sns.snsCheckedAt = todayStr()+' 12:00:00';
+      return {ok:true, data:{ id:body.id, snsCheckedAt: pm.sns.snsCheckedAt }};
     }
     if(action==='eventNames'){
       var map={};

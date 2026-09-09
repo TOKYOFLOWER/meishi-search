@@ -28,6 +28,9 @@ var PERSON_HEADER = ['contactId', 'organized', 'importance', 'relationship', 'ta
   'snsCheckedAt', 'createdAt', 'updatedAt'];
 var HISTORY_HEADER = ['contactId', 'contactDate', 'eventName', 'contactType', 'memo',
   'followUp', 'followDate', 'createdAt'];
+// 整理モードのクイックタグ（初期12件）。tags action はこれ＋人物管理 tags の DISTINCT を返す
+var QUICK_TAGS = ['守成クラブ', '経営者', '要フォロー', '花需要', '法人ギフト', 'EC', 'IT', 'AI',
+  '業務効率化', '販売代理店候補', '協業候補', '紹介者'];
 var CRM_FIELDS = ['importance', 'relationship', 'tags', 'needs', 'canIntroduce',
   'wantIntroduce', 'nextAction', 'nextActionDate', 'memo'];
 var SNS_PLATFORM_COL = {
@@ -92,6 +95,10 @@ function doPost(e) {
       out = addContactToSheet_(body);
     } else if (body.action === 'eventNames') {
       out = { ok: true, data: getEventNames_() };
+    } else if (body.action === 'tags') {
+      out = { ok: true, data: getTags_() };
+    } else if (body.action === 'snsMarkChecked') {
+      out = snsMarkCheckedInSheet_(body);
     } else if (body.action === 'bulkContactPreview') {
       out = bulkContactPreview_(body);
     } else if (body.action === 'bulkContactApply') {
@@ -286,7 +293,8 @@ function searchCards(q) {
   var contactFrom = String(q.contactFrom || '').trim();
   var contactTo = String(q.contactTo || '').trim();
   var tag = String(q.tag || '').trim();
-  var hasContactFilter = !!(eventName || contactFrom || contactTo || tag);
+  var followDue = !!q.followDue; // 要フォロー期限到来（nextActionDate<=今日 or followUp かつ followDate<=今日）
+  var hasContactFilter = !!(eventName || contactFrom || contactTo || tag || followDue);
 
   var d = readAll_(), c = colIndex_(d.header);
   var fields = ['会社名', '氏名', '住所', 'メール', '部署名', '役職'];
@@ -321,6 +329,14 @@ function searchCards(q) {
         Object.keys(allowedIds).forEach(function (id) { if (!tagAllowed[id]) delete allowedIds[id]; });
       } else {
         allowedIds = tagAllowed;
+      }
+    }
+    if (followDue) {
+      var dueSet = followDueSet_(pm, hm);
+      if (allowedIds) {
+        Object.keys(allowedIds).forEach(function (id) { if (!dueSet[id]) delete allowedIds[id]; });
+      } else {
+        allowedIds = dueSet;
       }
     }
   }
@@ -722,16 +738,8 @@ function computeStats_() {
     if (!organized) unorganizedCount++;
   });
 
-  var followSet = {};
-  pm.rows.forEach(function (r) {
-    if (parseTags_(r[pm.c['tags']]).indexOf('要フォロー') >= 0) followSet[String(r[pm.c['contactId']])] = true;
-  });
   var hm = loadHistoryMap_();
-  Object.keys(hm.byId).forEach(function (id) {
-    var hasFollow = hm.byId[id].some(function (r) { return isTrue_(r[hm.c['followUp']]); });
-    if (hasFollow) followSet[id] = true;
-  });
-  var followCount = Object.keys(followSet).length;
+  var followCount = Object.keys(followDueSet_(pm, hm)).length;
 
   return { total: total, newCount: newCount, unorganizedCount: unorganizedCount, followCount: followCount, days: days };
 }
@@ -945,6 +953,70 @@ function addContactToSheet_(input) {
     var rowNum = histD.sheet.getLastRow() + 1;
     writeSheetRow_(histD.sheet, header, rowNum, record, historyDateFields_());
     return { ok: true, data: { created: true, duplicate: false, label: label } };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 要フォロー（期限到来）の contactId 集合:
+//   人物管理.nextActionDate <= 今日、または 接触履歴.followUp=TRUE かつ followDate <= 今日
+function followDueSet_(pm, hm) {
+  var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+  var set = {};
+  pm.rows.forEach(function (r) {
+    var nd = isoDate_(r[pm.c['nextActionDate']]);
+    if (nd && nd <= today) set[String(r[pm.c['contactId']])] = true;
+  });
+  Object.keys(hm.byId).forEach(function (id) {
+    var due = hm.byId[id].some(function (r) {
+      if (!isTrue_(r[hm.c['followUp']])) return false;
+      var fd = isoDate_(r[hm.c['followDate']]);
+      return !!fd && fd <= today;
+    });
+    if (due) set[id] = true;
+  });
+  return set;
+}
+
+// タグ候補: 初期12件（QUICK_TAGS、quick:true）＋人物管理 tags の DISTINCT（出現回数降順）
+function getTags_() {
+  var counts = {};
+  var pm = loadPersonMap_();
+  pm.rows.forEach(function (r) {
+    parseTags_(r[pm.c['tags']]).forEach(function (t) { counts[t] = (counts[t] || 0) + 1; });
+  });
+  var items = QUICK_TAGS.map(function (t) { return { name: t, count: counts[t] || 0, quick: true }; });
+  var extra = Object.keys(counts).filter(function (t) { return QUICK_TAGS.indexOf(t) < 0; });
+  extra.sort(function (a, b) { return counts[b] - counts[a] || (a < b ? -1 : 1); });
+  extra.forEach(function (t) { items.push({ name: t, count: counts[t], quick: false }); });
+  return { items: items };
+}
+
+// 候補なしで「SNS確認済み」にする（snsCheckedAt=now のみ。URL列は触らない）
+function snsMarkCheckedInSheet_(input) {
+  input = input || {};
+  var id = String(input.id || '').trim();
+  if (!id) return { ok: false, error: 'missing_id' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    setupSnsBulkColumns_();
+    var personD = readSheet_(PERSON_SHEET);
+    var header = personD.header;
+    var rowIdx = findRowByContactId_(personD, id);
+    var now = nowStamp_();
+    var record = {};
+    if (rowIdx < 0) {
+      header.forEach(function (h) { record[h] = ''; });
+      record.contactId = id; record.organized = false; record.createdAt = now;
+    } else {
+      header.forEach(function (h, i2) { record[h] = personD.rows[rowIdx][i2]; });
+    }
+    record.snsCheckedAt = now;
+    record.updatedAt = now;
+    var rowNum = rowIdx < 0 ? personD.sheet.getLastRow() + 1 : rowIdx + 2;
+    writeSheetRow_(personD.sheet, header, rowNum, record, personDateFields_());
+    return { ok: true, data: { id: id, snsCheckedAt: now } };
   } finally {
     lock.releaseLock();
   }

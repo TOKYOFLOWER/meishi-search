@@ -73,6 +73,8 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 | `markOrganized` | `{id, organized:bool}` | `{id, organized}` |
 | `addContact` | `{id, contactDate, eventName, contactType, memo, followUp, followDate}` | `{created:bool, duplicate:bool, label}` |
 | `eventNames` | なし | `{items:[{name,count}]}` 出現回数降順 最大30 |
+| `tags` | なし | `{items:[{name,count,quick}]}` 初期12件（quick:true）＋人物管理 tags の DISTINCT（出現回数降順） |
+| `snsMarkChecked` | `{id}` | `{id, snsCheckedAt}` 候補なしで確認済みにする（URL列は変更しない） |
 | `bulkContactPreview` | `{scope:'batch'\|'unset'\|'ids', batchId?, days?, ids?, date, eventName}` | `{targetCount, willOverwriteCount, alreadyHistoryCount, targetIds}` |
 | `bulkContactApply` | 同上 + `overwrite:bool` | `{targetCount, updatedDateCount, createdHistoryCount, skippedDupCount, label}` |
 | `snsDetectFromSite` | `{id}` | `{siteUrl, candidates:[{platform,url,source:'公式サイト',sourceUrl}], error?}` 保存しない |
@@ -89,7 +91,8 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 - scope: `batch` = batchId 指定なら importBatchId 一致、無ければ 取込日 が days 日以内（既定7）。`unset` = 同じ窓（days/batchId 指定時）かつ 名刺交換日 空。`ids` = 指定 id 群
 - date は 'YYYY-MM-DD' に正規化（'2026/09/08' '2026.9.8' も受理）。不正なら `error:'bad_date'`
 - 表示ラベル `formatContactLabel_(eventName, iso)` → `守成 青山デイライト 260908`（内部保存には使わない）
-- 検索 q 追加: `eventName`（部分一致）, `contactFrom`, `contactTo`（'YYYY-MM-DD'）, `tag`（完全一致）。指定時のみ接触履歴/人物管理を結合。従来パラメータのみの挙動は不変。items に `tags:[]`, `lastEvent` を追加
+- 検索 q 追加: `eventName`（部分一致）, `contactFrom`, `contactTo`（'YYYY-MM-DD'）, `tag`（完全一致）, `followDue:true`（要フォロー期限到来）。
+- 要フォロー（stats.followCount／search followDue）の定義: 人物管理.nextActionDate ≤ 今日、または 接触履歴.followUp=TRUE かつ followDate ≤ 今日。指定時のみ接触履歴/人物管理を結合。従来パラメータのみの挙動は不変。items に `tags:[]`, `lastEvent` を追加
 
 一時 action（本番実行後に削除）: `_setupColumns`（列追加）／`_runTests`（test_bulk_ と test_sns_ を実行し結果を返す）
 
@@ -105,7 +108,7 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 
 ## 追加 action 一覧
 
-`stats` `newCards` `person` `savePerson` `markOrganized` `addContact` `eventNames` `bulkContactPreview` `bulkContactApply` `snsDetectFromSite` `snsSearchLinks` `snsSave` `snsRemove`（入出力は上の契約表）。
+`stats` `newCards` `person` `savePerson` `markOrganized` `addContact` `eventNames` `tags` `snsMarkChecked` `bulkContactPreview` `bulkContactApply` `snsDetectFromSite` `snsSearchLinks` `snsSave` `snsRemove`（入出力は上の契約表）。
 一時 action `_setupColumns` / `_runTests` は 2026-09-09 に本番（デプロイ @9）で各1回実行し、結果は列追加 OK（2回目は追加なし）・test_bulk_ 8/8 合格・test_sns_ 12/12 合格。実行後にコードから削除して push 済み（`setupSnsBulkColumns_` / `test_bulk_` / `test_sns_` は GAS エディタから実行可能）。
 削除版のデプロイ（`clasp -u tokyoflower deploy -i <既存ID> -d "SNS/一括設定 追加"`）は権限判定でブロックされたため、最終レポートの手順で再実行が必要（それまで @9 には認証必須の一時 action が残る）。
 
