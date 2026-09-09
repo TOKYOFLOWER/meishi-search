@@ -96,6 +96,22 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 
 一時 action（本番実行後に削除）: `_setupColumns`（列追加）／`_runTests`（test_bulk_ と test_sns_ を実行し結果を返す）
 
+## 2026-09-09 初期表示の高速化（bootstrap 1本化＋CacheService）
+
+- 新 action `bootstrap` `{days?:1|3|7|30(既定7), onlyUnorganized?:bool(既定true)}` → `{stats, newCards(+onlyUnorganized), tags, eventNames, filters, cached, generatedAt}`。各シートの getValues は1回ずつ（名刺DB は必要列だけ2ブロック、人物管理・接触履歴は全列1回）。個別 action（stats / newCards / tags / eventNames / filters / ping）は契約不変で存続
+- CacheService（スクリプトキャッシュ）に 120 秒キャッシュ。キー `bootstrap:v1:{days}:{0|1}`。100KB 超は gzip+base64、それでも超える場合はキャッシュせず動作継続。書き込み系 action（savePerson / markOrganized / addContact / bulkContactApply / snsSave / snsRemove / snsMarkChecked / addCard）の末尾で全キーを削除
+- 読取範囲: `readCards_(CARD_LIST_COLS)` で名刺DB の判定・表示列（id〜業種・都道府県・名刺交換日・取込日・importBatchId）だけを読む。接触履歴の並び替えは必要な contactId だけ遅延（`histSorted_`）。`ss_()` は実行内で openById を1回にメモ化
+- フロント: ログイン／自動ログインで bootstrap を1回だけ呼び、filters・eventNames・tags・stats・新着一覧（既定条件）を同時に描画。新着画面の初回は bootstrap の一覧を使い、条件変更・書き込み後は newCards を再取得
+- 計測（tests/gas_perf.js、4,000行ダミー。時間はスタブ上の目安で、主指標は読取回数）:
+
+| | GAS 呼び出し本数 | getValues 回数 | 読取セル数 | openById |
+|---|---|---|---|---|
+| 改修前（ping+filters+eventNames+tags+stats） | 5 | 9 | 約330,000 | 9 |
+| 改修後 bootstrap（未キャッシュ） | 1 | 5 | 約86,000 | 1 |
+| 改修後 bootstrap（キャッシュ命中） | 1 | 0 | 0 | 0 |
+
+- 検証: bootstrap の結果が個別5本の結果と JSON 一致、書き込み後にキャッシュが消えて次の bootstrap が最新（未整理 -1）を返す。既存テスト4本も全合格
+
 ## 2026-09-09 追加変更（処理中オーバーレイ／一括処理高速化／取込時交換日の空欄化）
 
 - index.html: `showBusy(message)` / `hideBusy()` を `api()` に組み込み、全 API 呼び出しで自動表示・finally で必ず非表示。一括設定モーダルは送信中ボタン無効化＋二重送信防止
@@ -115,7 +131,7 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 
 ## 追加 action 一覧
 
-`stats` `newCards` `person` `savePerson` `markOrganized` `addContact` `eventNames` `tags` `snsMarkChecked` `bulkContactPreview` `bulkContactApply` `snsDetectFromSite` `snsSearchLinks` `snsSave` `snsRemove`（入出力は上の契約表）。
+`bootstrap` `stats` `newCards` `person` `savePerson` `markOrganized` `addContact` `eventNames` `tags` `snsMarkChecked` `bulkContactPreview` `bulkContactApply` `snsDetectFromSite` `snsSearchLinks` `snsSave` `snsRemove`（入出力は上の契約表）。
 一時 action `_setupColumns` / `_runTests` は 2026-09-09 に本番（デプロイ @9）で各1回実行し、結果は列追加 OK（2回目は追加なし）・test_bulk_ 8/8 合格・test_sns_ 12/12 合格。実行後にコードから削除して push 済み（`setupSnsBulkColumns_` / `test_bulk_` / `test_sns_` は GAS エディタから実行可能）。
 削除版のデプロイ（`clasp -u tokyoflower deploy -i <既存ID> -d "SNS/一括設定 追加"`）は権限判定でブロックされたため、最終レポートの手順で再実行が必要（それまで @9 には認証必須の一時 action が残る）。
 

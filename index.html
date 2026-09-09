@@ -410,12 +410,15 @@
   var QUICK_TAGS = ['守成クラブ','経営者','要フォロー','花需要','法人ギフト','EC','IT','AI','業務効率化','販売代理店候補','協業候補','紹介者'];
   // タグ候補（tags action: 初期12件＋人物管理 tags の DISTINCT）。取得失敗時は QUICK_TAGS のみ
   var TAG_CANDIDATES = QUICK_TAGS.slice();
+  // tags.items から TAG_CANDIDATES を組み立てる共通ロジック（bootstrap / 個別tags両方から呼ぶ）
+  function mergeTagCandidates(items){
+    if(!items) return;
+    var names = items.map(function(x){ return x.name; });
+    TAG_CANDIDATES = QUICK_TAGS.concat(names.filter(function(n){ return QUICK_TAGS.indexOf(n)===-1; }));
+  }
   function loadTagCandidates(){
     return api('tags').then(function(r){
-      if(r && r.ok && r.data && r.data.items){
-        var names = r.data.items.map(function(x){ return x.name; });
-        TAG_CANDIDATES = QUICK_TAGS.concat(names.filter(function(n){ return QUICK_TAGS.indexOf(n)===-1; }));
-      }
+      if(r && r.ok && r.data && r.data.items){ mergeTagCandidates(r.data.items); }
     }).catch(function(){});
   }
   var CONTACT_TYPES = ['名刺交換','面談','電話','メール','紹介','その他'];
@@ -424,6 +427,8 @@
 
   var EVENT_NAMES = [];
   var newState = { days:7, onlyUnorganized:true, items:[] };
+  var BOOT_NEWCARDS = null; // bootstrap で取得した newCards のシード（条件が一致する初回のみ使用）
+  var STATS_FRESH = false; // bootstrap 直後は stats 取得済みなので、ホーム初回描画の loadStats を1回だけ抑制
   var reviewState = { list:[], index:0 };
   var CURRENT_PERSON_ID = null;
   var CURRENT_SNS_ID = null;
@@ -461,6 +466,7 @@
   // action → 既定の busyMessage
   var BUSY_MESSAGES = {
     ping: '確認中…',
+    bootstrap: '読み込み中…',
     bulkContactPreview: '対象を確認しています…',
     bulkContactApply: '交換情報を設定しています…',
     savePerson: '保存中…',
@@ -524,8 +530,8 @@
     EL('loginBtn').disabled = true; EL('loginErr').textContent = '確認中…';
     setCreds({ user:user, pass:pass });
     try {
-      var r = await api('ping');
-      if(r && r.ok){ EL('loginErr').textContent=''; await enterApp(); }
+      var r = await api('bootstrap', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }, { busyMessage:'読み込み中…' });
+      if(r && r.ok){ EL('loginErr').textContent=''; await enterApp(r.data); }
       else { clearCreds(); EL('loginErr').textContent='IDまたはパスワードが違います'; }
     } catch(e){
       clearCreds(); EL('loginErr').textContent='接続に失敗しました（URL設定/通信をご確認ください）';
@@ -535,22 +541,39 @@
   // 自動ログイン(セッションに資格情報があれば)
   (async function(){
     if(getCreds()){
-      try { var r = await api('ping'); if(r && r.ok){ await enterApp(); return; } } catch(e){}
+      try {
+        var r = await api('bootstrap', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }, { busyMessage:'読み込み中…' });
+        if(r && r.ok){ await enterApp(r.data); return; }
+      } catch(e){}
       clearCreds();
     }
   })();
 
-  async function enterApp(){
+  // boot: bootstrap のレスポンス data（{filters,eventNames,tags,stats,newCards,...}）。
+  // 旧経路など boot が無い場合は従来どおり個別取得する。
+  async function enterApp(boot){
     EL('login').style.display='none';
     EL('app').style.display='block';
-    var f = await api('filters');
-    if(!f || !f.ok){ doLogout(); return; }
-    initFilters(f.data);
-    await loadEventNames();
-    loadTagCandidates();
+    if(boot){
+      initFilters(boot.filters);
+      EVENT_NAMES = (boot.eventNames && boot.eventNames.items) || [];
+      renderEventDatalist(); renderEvChips();
+      mergeTagCandidates(boot.tags && boot.tags.items);
+      applyStats(boot.stats);
+      STATS_FRESH = true;
+      if(boot.newCards){ BOOT_NEWCARDS = boot.newCards; }
+    } else {
+      var f = await api('filters');
+      if(!f || !f.ok){ doLogout(); return; }
+      initFilters(f.data);
+      await loadEventNames();
+      loadTagCandidates();
+      loadStats();
+    }
     EL('list').onclick = handleListClick;
-    if(!location.hash){ location.hash = '#home'; }
-    route();
+    // hashが未設定ならhashchange経由でroute()が呼ばれる。既にhashがある場合のみここで明示的に呼ぶ
+    // （両方で呼ぶとroute()が二重実行され、loadStats等が二重に走ってしまうため）
+    if(!location.hash){ location.hash = '#home'; } else { route(); }
   }
 
   window.addEventListener('hashchange', route);
@@ -605,13 +628,17 @@
   EL('entryUnorg').onclick = function(){ pendingNewOptions={days:30, onlyUnorganized:true}; location.hash='#new'; };
   EL('entryFollow').onclick = function(){ pendingSearchQuery={followDue:true}; location.hash='#search'; };
 
+  function applyStats(stats){
+    if(!stats) return;
+    EL('entryNew').querySelector('b').textContent = stats.newCount;
+    EL('entryUnorg').querySelector('b').textContent = stats.unorganizedCount;
+    EL('entryFollow').querySelector('b').textContent = stats.followCount;
+  }
   function loadStats(){
+    if(STATS_FRESH){ STATS_FRESH = false; return; } // bootstrap直後の初回ホーム描画は取得済みなのでスキップ
     api('stats').then(function(r){
-      if(r && r.ok){
-        EL('entryNew').querySelector('b').textContent = r.data.newCount;
-        EL('entryUnorg').querySelector('b').textContent = r.data.unorganizedCount;
-        EL('entryFollow').querySelector('b').textContent = r.data.followCount;
-      } else if(r && r.error==='auth'){ doLogout(); }
+      if(r && r.ok){ applyStats(r.data); }
+      else if(r && r.error==='auth'){ doLogout(); }
     });
   }
 
@@ -768,6 +795,14 @@
   EL('sessEvent').onchange = function(){ saveSession({ date:EL('sessDate').value, eventName:this.value }); };
 
   function loadNewList(){
+    // bootstrap のシードが条件一致すればAPIを呼ばず使う（1回限り）
+    if(BOOT_NEWCARDS && newState.days===BOOT_NEWCARDS.days && newState.onlyUnorganized===BOOT_NEWCARDS.onlyUnorganized){
+      var seed = BOOT_NEWCARDS; BOOT_NEWCARDS = null;
+      newState.items = seed.items||[];
+      EL('newHeading').textContent = '新着名刺 '+seed.count+'件';
+      renderNewList();
+      return;
+    }
     EL('newList').innerHTML = '<div class="spin">読み込み中…</div>';
     api('newCards', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }).then(function(r){
       if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} EL('newList').innerHTML='<div class="empty"><b>エラー</b></div>'; return; }
@@ -905,6 +940,7 @@
         return;
       }
       closeModal();
+      BOOT_NEWCARDS = null;
       toast('交換日 更新 '+r.data.updatedDateCount+'件／履歴 作成 '+r.data.createdHistoryCount+'件／重複スキップ '+r.data.skippedDupCount+'件');
       saveSession({ date: previewData.date, eventName: previewData.eventName });
       loadSessionIntoBar();
@@ -1023,6 +1059,7 @@
       };
       api('addContact', body).then(function(r){
         if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('追加に失敗しました'); return; }
+        BOOT_NEWCARDS = null;
         if(r.data.duplicate){ toast('同じ履歴が既にあります'); } else { toast('接触履歴を追加しました'); }
         container.innerHTML='';
         if(onDone) onDone(r.data);
@@ -1086,6 +1123,7 @@
       api('savePerson', { id:id, crm: collectCrmForm(EL('reviewFormBox')), organized:true }).then(function(r){
         if(r && r.ok) loadTagCandidates();
         if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('保存に失敗しました'); return; }
+        BOOT_NEWCARDS = null;
         markLocalOrganized(id, true);
         toast('保存しました');
         reviewState.index++; loadReviewPerson();
@@ -1095,6 +1133,7 @@
     document.getElementById('rvOrganize').onclick = function(){
       api('markOrganized', { id:id, organized: !organized }).then(function(r){
         if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('更新に失敗しました'); return; }
+        BOOT_NEWCARDS = null;
         markLocalOrganized(id, r.data.organized);
         toast(r.data.organized?'整理済みにしました':'未整理に戻しました');
         data.crm.organized = r.data.organized;
@@ -1206,12 +1245,14 @@
       api('savePerson', { id:id, crm: collectCrmForm(EL('personFormBox')), organized: organized }).then(function(r){
         if(r && r.ok) loadTagCandidates();
         if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('保存に失敗しました'); return; }
+        BOOT_NEWCARDS = null;
         toast('保存しました');
       });
     };
     document.getElementById('pOrganizeBtn').onclick = function(){
       api('markOrganized', { id:id, organized: !organized }).then(function(r){
         if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('更新に失敗しました'); return; }
+        BOOT_NEWCARDS = null;
         toast(r.data.organized?'整理済みにしました':'未整理に戻しました');
         loadPerson(id);
       });
@@ -1255,6 +1296,7 @@
     var id = CURRENT_SNS_ID; if(!id) return;
     api('snsMarkChecked', { id:id }).then(function(r){
       if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('更新に失敗しました'); return; }
+      BOOT_NEWCARDS = null;
       toast('SNS確認済みにしました');
       loadSnsPersonHead(id);
     });
@@ -1274,6 +1316,7 @@
       btn.onclick = function(){
         api('snsRemove', { id:id, platform: btn.getAttribute('data-platform') }).then(function(r){
           if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} toast('解除に失敗しました'); return; }
+          BOOT_NEWCARDS = null;
           toast('解除しました');
           loadSnsPersonHead(id);
         });
@@ -1323,6 +1366,7 @@
         if(r&&r.error==='bad_domain'){ toast('このSNSのドメインではありません'); return; }
         toast('保存に失敗しました'); return;
       }
+      BOOT_NEWCARDS = null;
       toast('確定しました');
       if(onDone) onDone();
       loadSnsPersonHead(id);
@@ -1384,6 +1428,24 @@
   }
   function mockHandle(action, body){
     if(action==='ping') return {ok:true, data:{}};
+    if(action==='bootstrap'){
+      var bDays = body.days || 7;
+      var bOnlyUnorg = (body.onlyUnorganized===undefined) ? true : !!body.onlyUnorganized;
+      var statsR = mockHandle('stats', {});
+      var newCardsR = mockHandle('newCards', { days:bDays, onlyUnorganized:bOnlyUnorg });
+      var tagsR = mockHandle('tags', {});
+      var evR = mockHandle('eventNames', {});
+      var filtersR = mockHandle('filters', {});
+      return {ok:true, data:{
+        stats: statsR.data,
+        newCards: Object.assign({}, newCardsR.data, { onlyUnorganized:bOnlyUnorg }),
+        tags: tagsR.data,
+        eventNames: evR.data,
+        filters: filtersR.data,
+        cached:false,
+        generatedAt: todayStr()+' 12:00:00'
+      }};
+    }
     if(action==='filters'){
       return {ok:true, data:{
         total: MOCK_DB.persons.length,

@@ -45,7 +45,11 @@ var SNS_DOMAIN_RULES = {
   youtube: /(^|\.)youtube\.com$|(^|\.)youtu\.be$/i
 };
 
-function ss_() { return SpreadsheetApp.openById(SPREADSHEET_ID); }
+var SS_CACHE_ = null;
+function ss_() { // 1回の実行内では openById を1度だけ（各 action が複数シートを読むため）
+  if (!SS_CACHE_) SS_CACHE_ = SpreadsheetApp.openById(SPREADSHEET_ID);
+  return SS_CACHE_;
+}
 
 /* ==================================================================
  *  Web エントリポイント
@@ -81,6 +85,8 @@ function doPost(e) {
       out = { ok: true, data: searchCards(body.q || {}) };
     } else if (body.action === 'addCard') {
       out = addCardToSheet(body.card || {});
+    } else if (body.action === 'bootstrap') {
+      out = bootstrap_(body);
     } else if (body.action === 'stats') {
       out = { ok: true, data: computeStats_() };
     } else if (body.action === 'newCards') {
@@ -153,6 +159,35 @@ function readAll_() {
 }
 function colIndex_(header) {
   var m = {}; header.forEach(function (h, i) { m[String(h).trim()] = i; }); return m;
+}
+// 名刺DB のうち names の列だけを読む（ヘッダ1行 + 連続する列ブロックごとに getValues）。
+// 戻り値の rows は全ヘッダ幅の疎な配列（読んでいない列は ''）なので c[name] で従来どおり参照できる。
+var CARD_LIST_COLS = ['id', '会社名', '部署名', '役職', '役職レベル', '氏名', '業種', '都道府県', '名刺交換日', '取込日', 'importBatchId'];
+function readCards_(names) {
+  var sh = getSheet_();
+  var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) return { header: HEADER, rows: [] };
+  var header = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var c = colIndex_(header);
+  var idx = [];
+  names.forEach(function (n) { if (c[n] !== undefined) idx.push(c[n]); });
+  idx.sort(function (a, b) { return a - b; });
+  var n = lastRow - 1;
+  var rows = [];
+  for (var i = 0; i < n; i++) { var empty = []; for (var j = 0; j < header.length; j++) empty.push(''); rows.push(empty); }
+  if (n <= 0 || !idx.length) return { header: header, rows: rows };
+  // 近い列（間隔3以内）は1ブロックにまとめて読む
+  var blocks = [];
+  idx.forEach(function (i2) {
+    var b = blocks[blocks.length - 1];
+    if (b && i2 - b[1] <= 3) b[1] = i2; else blocks.push([i2, i2]);
+  });
+  blocks.forEach(function (b) {
+    var w = b[1] - b[0] + 1;
+    var vals = sh.getRange(2, b[0] + 1, n, w).getValues();
+    for (var r = 0; r < n; r++) for (var k = 0; k < w; k++) rows[r][b[0] + k] = vals[r][k];
+  });
+  return { header: header, rows: rows };
 }
 
 // 人物管理／接触履歴シートの読み取り（{sheet, header, rows, c}）。シートが無ければ例外。
@@ -269,8 +304,8 @@ function findRowByContactId_(d, id) {
   return -1;
 }
 
-function getFilters() {
-  var d = readAll_(), c = colIndex_(d.header);
+function getFilters(pre) {
+  var d = (pre && pre.cards) || readCards_(CARD_LIST_COLS), c = colIndex_(d.header);
   var prefs = {}, inds = {}, roles = {};
   d.rows.forEach(function (r) {
     var p = r[c['都道府県']]; if (p) prefs[p] = (prefs[p] || 0) + 1;
@@ -366,8 +401,8 @@ function searchCards(q) {
     if (hasContactFilter) {
       var pr = pm.byId[id];
       tags = pr ? parseTags_(pr[pm.c['tags']]) : [];
-      var hist = hm.byId[id];
-      if (hist && hist.length) lastEvent = formatContactLabel_(hist[0][hm.c['eventName']], String(hist[0][hm.c['contactDate']] || ''));
+      var hist = histSorted_(hm, id);
+      if (hist.length) lastEvent = formatContactLabel_(hist[0][hm.c['eventName']], pickExchanged_(hist[0][hm.c['contactDate']]));
     }
     return {
       id: id, company: pick(r, '会社名'), dept: pick(r, '部署名'),
@@ -404,16 +439,21 @@ function loadHistoryMap_() {
       if (!byId[id]) byId[id] = [];
       byId[id].push(r);
     });
-    Object.keys(byId).forEach(function (id) {
-      byId[id].sort(function (a, b) {
-        var ad = pickExchanged_(a[c['contactDate']]), bd = pickExchanged_(b[c['contactDate']]);
-        if (ad !== bd) return ad < bd ? 1 : -1;
-        var ac = String(a[c['createdAt']] || ''), bc = String(b[c['createdAt']] || '');
-        return ac < bc ? 1 : (ac > bc ? -1 : 0);
-      });
-    });
   } catch (e) { /* シート未作成: 空のまま */ }
-  return { c: c, byId: byId };
+  return { c: c, byId: byId, sorted: {} };
+}
+// 指定 contactId の履歴を新しい順（contactDate 降順→createdAt 降順）で返す。必要な id だけ並び替える（遅延・メモ化）
+function histSorted_(hm, id) {
+  if (hm.sorted[id]) return hm.sorted[id];
+  var c = hm.c;
+  var arr = (hm.byId[id] || []).slice().sort(function (a, b) {
+    var ad = pickExchanged_(a[c['contactDate']]), bd = pickExchanged_(b[c['contactDate']]);
+    if (ad !== bd) return ad < bd ? 1 : -1;
+    var ac = String(a[c['createdAt']] || ''), bc = String(b[c['createdAt']] || '');
+    return ac < bc ? 1 : (ac > bc ? -1 : 0);
+  });
+  hm.sorted[id] = arr;
+  return arr;
 }
 
 /* ==================================================================
@@ -616,7 +656,7 @@ function addCardToSheet(card) {
 
     var newRowNum = sh.getLastRow() + 1;
     sh.getRange(newRowNum, 1, 1, row.length).setValues([row]);
-
+    invalidateBootstrapCache_();
     return { ok: true, duplicate: false, row: newRowNum, id: newId };
   } finally {
     lock.releaseLock();
@@ -732,9 +772,11 @@ function setColumnPlainText_(sh, header, names) {
 /* ==================================================================
  *  stats / newCards / person / savePerson / markOrganized / addContact / eventNames
  * ================================================================== */
-function computeStats_() {
+// pre = {cards, pm, hm}（bootstrap から渡す事前読込。無ければ各自読む）
+function computeStats_(pre) {
+  var t0 = Date.now();
   var days = 7;
-  var cardsD = readAll_(), cc = colIndex_(cardsD.header);
+  var cardsD = (pre && pre.cards) || readCards_(CARD_LIST_COLS), cc = colIndex_(cardsD.header);
   var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
   var windowStart = addDaysIso_(today, -(days - 1));
   var total = cardsD.rows.length;
@@ -746,7 +788,7 @@ function computeStats_() {
   });
   var newCount = Object.keys(newIds).length;
 
-  var pm = loadPersonMap_();
+  var pm = (pre && pre.pm) || loadPersonMap_();
   var unorganizedCount = 0;
   Object.keys(newIds).forEach(function (id) {
     var pr = pm.byId[id];
@@ -754,22 +796,24 @@ function computeStats_() {
     if (!organized) unorganizedCount++;
   });
 
-  var hm = loadHistoryMap_();
+  var hm = (pre && pre.hm) || loadHistoryMap_();
   var followCount = Object.keys(followDueSet_(pm, hm)).length;
+  Logger.log('stats: ' + (Date.now() - t0) + 'ms');
 
   return { total: total, newCount: newCount, unorganizedCount: unorganizedCount, followCount: followCount, days: days };
 }
 
-function getNewCards_(input) {
+function getNewCards_(input, pre) {
+  var t0 = Date.now();
   input = input || {};
   var days = parseInt(input.days, 10);
   if ([1, 3, 7, 30].indexOf(days) < 0) days = 7;
   var onlyUnorganized = !!input.onlyUnorganized;
-  var d = readAll_(), c = colIndex_(d.header);
+  var d = (pre && pre.cards) || readCards_(CARD_LIST_COLS), c = colIndex_(d.header);
   var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
   var windowStart = addDaysIso_(today, -(days - 1));
-  var pm = loadPersonMap_();
-  var hm = loadHistoryMap_();
+  var pm = (pre && pre.pm) || loadPersonMap_();
+  var hm = (pre && pre.hm) || loadHistoryMap_();
 
   var matched = [];
   d.rows.forEach(function (r) {
@@ -781,9 +825,9 @@ function getNewCards_(input) {
     if (onlyUnorganized && organized) return;
     var tags = pr ? parseTags_(pr[pm.c['tags']]) : [];
     var snsChecked = pr ? !!String(pr[pm.c['snsCheckedAt']] || '').trim() : false;
-    var hist = hm.byId[id];
+    var hist = histSorted_(hm, id);
     var lastEvent = '';
-    if (hist && hist.length) lastEvent = formatContactLabel_(hist[0][hm.c['eventName']], String(hist[0][hm.c['contactDate']] || ''));
+    if (hist.length) lastEvent = formatContactLabel_(hist[0][hm.c['eventName']], pickExchanged_(hist[0][hm.c['contactDate']]));
     matched.push({
       iso: iso, id: id,
       summary: {
@@ -800,6 +844,7 @@ function getNewCards_(input) {
     if (a.iso !== b.iso) return a.iso < b.iso ? 1 : -1;
     return a.id < b.id ? 1 : (a.id > b.id ? -1 : 0);
   });
+  Logger.log('newCards: ' + matched.length + '件 ' + (Date.now() - t0) + 'ms');
   return { count: matched.length, days: days, items: matched.map(function (m) { return m.summary; }) };
 }
 
@@ -901,7 +946,7 @@ function savePersonToSheet_(input) {
 
     var rowNum = rowIdx < 0 ? personD.sheet.getLastRow() + 1 : rowIdx + 2;
     writeSheetRow_(personD.sheet, header, rowNum, record, personDateFields_());
-
+    invalidateBootstrapCache_();
     return { ok: true, data: { id: id, organized: organized, updatedAt: now } };
   } finally {
     lock.releaseLock();
@@ -932,6 +977,7 @@ function markOrganizedInSheet_(input) {
     record.updatedAt = now;
     var rowNum = rowIdx < 0 ? personD.sheet.getLastRow() + 1 : rowIdx + 2;
     writeSheetRow_(personD.sheet, header, rowNum, record, personDateFields_());
+    invalidateBootstrapCache_();
     return { ok: true, data: { id: id, organized: organized } };
   } finally {
     lock.releaseLock();
@@ -968,6 +1014,7 @@ function addContactToSheet_(input) {
     };
     var rowNum = histD.sheet.getLastRow() + 1;
     writeSheetRow_(histD.sheet, header, rowNum, record, historyDateFields_());
+    invalidateBootstrapCache_();
     return { ok: true, data: { created: true, duplicate: false, label: label } };
   } finally {
     lock.releaseLock();
@@ -999,9 +1046,9 @@ function followDueSet_(pm, hm) {
 }
 
 // タグ候補: 初期12件（QUICK_TAGS、quick:true）＋人物管理 tags の DISTINCT（出現回数降順）
-function getTags_() {
+function getTags_(pre) {
   var counts = {};
-  var pm = loadPersonMap_();
+  var pm = (pre && pre.pm) || loadPersonMap_();
   pm.rows.forEach(function (r) {
     parseTags_(r[pm.c['tags']]).forEach(function (t) { counts[t] = (counts[t] || 0) + 1; });
   });
@@ -1036,18 +1083,25 @@ function snsMarkCheckedInSheet_(input) {
     record.updatedAt = now;
     var rowNum = rowIdx < 0 ? personD.sheet.getLastRow() + 1 : rowIdx + 2;
     writeSheetRow_(personD.sheet, header, rowNum, record, personDateFields_());
+    invalidateBootstrapCache_();
     return { ok: true, data: { id: id, snsCheckedAt: now } };
   } finally {
     lock.releaseLock();
   }
 }
 
-function getEventNames_() {
-  var histD;
-  try { histD = readSheet_(HISTORY_SHEET); } catch (e) { return { items: [] }; }
-  var hc = histD.c;
+function getEventNames_(pre) {
+  var hc, rowsAll;
+  if (pre && pre.hm) {
+    hc = pre.hm.c; rowsAll = [];
+    Object.keys(pre.hm.byId).forEach(function (id) { rowsAll = rowsAll.concat(pre.hm.byId[id]); });
+  } else {
+    var histD;
+    try { histD = readSheet_(HISTORY_SHEET); } catch (e) { return { items: [] }; }
+    hc = histD.c; rowsAll = histD.rows;
+  }
   var counts = {}, latest = {};
-  histD.rows.forEach(function (r) {
+  rowsAll.forEach(function (r) {
     var name = String(r[hc['eventName']] || '').trim();
     if (!name) return;
     counts[name] = (counts[name] || 0) + 1;
@@ -1061,6 +1115,77 @@ function getEventNames_() {
     return la < lb ? 1 : (la > lb ? -1 : 0);
   });
   return { items: items.slice(0, 30) };
+}
+
+/* ==================================================================
+ *  bootstrap（初期表示用: stats + newCards + tags + eventNames + filters を1回の読込で）＋ CacheService
+ * ================================================================== */
+var BOOT_CACHE_SEC = 120;
+var BOOT_CACHE_MAX = 100000; // CacheService の 1 値あたり上限 100KB
+function bootCacheKey_(days, onlyUnorganized) { return 'bootstrap:v1:' + days + ':' + (onlyUnorganized ? 1 : 0); }
+function bootCacheKeysAll_() {
+  var keys = [];
+  [1, 3, 7, 30].forEach(function (d) { keys.push(bootCacheKey_(d, true)); keys.push(bootCacheKey_(d, false)); });
+  return keys;
+}
+// 書き込み系 action の末尾で呼ぶ（整理直後に古い件数・一覧が出ないように）
+function invalidateBootstrapCache_() {
+  try { CacheService.getScriptCache().removeAll(bootCacheKeysAll_()); } catch (e) { /* noop */ }
+}
+function bootCacheGet_(key) {
+  try {
+    var v = CacheService.getScriptCache().get(key);
+    if (!v) return null;
+    if (v.indexOf('gz:') === 0) {
+      var bytes = Utilities.base64Decode(v.slice(3));
+      v = Utilities.ungzip(Utilities.newBlob(bytes)).getDataAsString();
+    } else if (v.indexOf('js:') === 0) {
+      v = v.slice(3);
+    }
+    return JSON.parse(v);
+  } catch (e) { return null; }
+}
+function bootCachePut_(key, data) {
+  try {
+    var json = JSON.stringify(data);
+    var v = 'js:' + json;
+    if (v.length > BOOT_CACHE_MAX) {
+      v = 'gz:' + Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(json)).getBytes());
+    }
+    if (v.length > BOOT_CACHE_MAX) return false; // 圧縮しても入らない: キャッシュせず継続
+    CacheService.getScriptCache().put(key, v, BOOT_CACHE_SEC);
+    return true;
+  } catch (e) { return false; }
+}
+function bootstrap_(input) {
+  input = input || {};
+  var t0 = Date.now();
+  var days = parseInt(input.days, 10);
+  if ([1, 3, 7, 30].indexOf(days) < 0) days = 7;
+  var onlyUnorganized = input.hasOwnProperty('onlyUnorganized') ? !!input.onlyUnorganized : true;
+  var key = bootCacheKey_(days, onlyUnorganized);
+  var cached = bootCacheGet_(key);
+  if (cached) {
+    cached.cached = true;
+    Logger.log('bootstrap(cache): ' + (Date.now() - t0) + 'ms');
+    return { ok: true, data: cached };
+  }
+  // 各シート1回ずつ読む
+  var pre = { cards: readCards_(CARD_LIST_COLS), pm: loadPersonMap_(), hm: loadHistoryMap_() };
+  var nc = getNewCards_({ days: days, onlyUnorganized: onlyUnorganized }, pre);
+  nc.onlyUnorganized = onlyUnorganized;
+  var data = {
+    stats: computeStats_(pre),
+    newCards: nc,
+    tags: getTags_(pre),
+    eventNames: getEventNames_(pre),
+    filters: getFilters(pre),
+    cached: false,
+    generatedAt: nowStamp_()
+  };
+  bootCachePut_(key, data);
+  Logger.log('bootstrap: ' + (Date.now() - t0) + 'ms');
+  return { ok: true, data: data };
 }
 
 /* ==================================================================
@@ -1199,6 +1324,7 @@ function bulkContactApply_(input) {
       histD.sheet.getRange(startRow, 1, appendRows.length, header.length).setValues(appendRows);
     }
 
+    invalidateBootstrapCache_();
     var label = formatContactLabel_(eventName, iso);
     Logger.log('bulkContactApply: ' + t.targets.length + '件 / 交換日更新 ' + updatedDateCount + ' / 履歴作成 ' + createdHistoryCount + ' / 重複 ' + skippedDupCount + ' / ' + (Date.now() - t0) + 'ms');
     return { ok: true, data: { targetCount: t.targets.length, updatedDateCount: updatedDateCount, createdHistoryCount: createdHistoryCount, skippedDupCount: skippedDupCount, label: label } };
@@ -1358,6 +1484,7 @@ function snsSaveToSheet_(input) {
     record.updatedAt = now;
     var rowNum = rowIdx < 0 ? personD.sheet.getLastRow() + 1 : rowIdx + 2;
     writeSheetRow_(personD.sheet, header, rowNum, record, personDateFields_());
+    invalidateBootstrapCache_();
     return { ok: true, data: { id: id, platform: platform, url: url, snsCheckedAt: now } };
   } finally {
     lock.releaseLock();
@@ -1385,6 +1512,7 @@ function snsRemoveFromSheet_(input) {
     record[col] = '';
     record.updatedAt = now; // snsCheckedAtは残す
     writeSheetRow_(personD.sheet, header, rowIdx + 2, record, personDateFields_());
+    invalidateBootstrapCache_();
     return { ok: true, data: { id: id, platform: platform } };
   } finally {
     lock.releaseLock();
