@@ -17,6 +17,31 @@ GAS の Web App（`addCard` アクション）経由でスプレッドシート�
 シートには `備考` 列（無ければ自動追加）に `scan:<元ファイル名>` が入るので、取り込み元を追えます。
 `importBatchId` には `scan-YYYYMMDD` が入ります。`名刺交換日` は取込時には入れません（スキャン日≠交換日のため）。検索画面の「交換情報を一括設定」で入れてください。
 
+## 名刺画像
+
+- 取込時（`--once` / `--watch` / `--file`）に、抽出に使った画像ファイルから表面（PDFで2ページ目があれば裏面も）の
+  縮小画像を作り、`addCard` 送信時に一緒に GAS へ送ります。GAS 側は Drive の非公開フォルダに保存します。
+  - full（長辺1200px, JPEG品質80）と thumb（長辺320px, JPEG品質70）の2種類。
+  - 送信データの合計サイズが大きい場合は品質を自動的に下げ、それでも大きければ裏面のfull→裏面全体の順に落とします。
+  - 画像の生成に失敗しても（PDFの読み取り不可などでも）カード登録自体は止めず、警告ログを出して続行します。
+  - `--dry-run` では画像本体は表示せず、full/thumbのサイズだけを表示します。
+- 元画像（`E:\namecardscan` 配下）は書き換えません。
+
+### 過去分の画像バックフィル（`--backfill`）
+
+まだ画像が登録されていない名刺（GAS側で imageFrontId が空のもの）に対して、備考の `scan:<元ファイル名>` を手掛かりに
+`done\` / `error\` から元ファイルを探し、後から画像を紐付けます。
+
+```
+.venv\Scripts\python.exe ingest.py --backfill --dry-run   REM 対象件数・紐付け可否だけ確認（送信しない）
+.venv\Scripts\python.exe ingest.py --backfill              REM 実際にGASへ画像を送信して紐付ける
+```
+
+- `--dry-run` を付けても GAS への問い合わせ（対象一覧の取得）自体は行いますが、画像の送信は行いません。
+- `done\` は再帰的に、`error\` は直下を探します。ファイル名が完全一致しない場合は、取込時に重複回避で付いた
+  連番（`stem_1.jpg` など）も候補にします。`dup_` が付いたファイル（重複扱いで退避されたもの）は対象外です。
+- 元ファイルが見つからない、または画像生成・送信に失敗した分はログに出してスキップし、次に進みます。
+
 ## error\ フォルダの扱い
 
 - `.log` を開いて理由を確認します。よくある原因は「会社名も氏名も読めない」「JSON パース失敗」「GAS 認証失敗（.env の APP_USER / APP_PASS）」です。
@@ -32,6 +57,8 @@ run_ingest.bat                                         REM 監視フォルダを
 .venv\Scripts\python.exe ingest.py --dry-run           REM 送信せず抽出結果だけ表示
 .venv\Scripts\python.exe ingest.py --file <パス>       REM 1 ファイルだけ処理
 .venv\Scripts\python.exe ingest.py --watch             REM 60 秒間隔で常駐（Ctrl+C で終了）
+.venv\Scripts\python.exe ingest.py --backfill --dry-run REM 画像未登録の名刺の紐付け可否を確認
+.venv\Scripts\python.exe ingest.py --backfill           REM 画像未登録の名刺に過去分の画像を紐付ける
 ```
 
 ログは `ingest\logs\ingest_YYYYMMDD.log`（1 ファイル 1 行: 結果 / ファイル名 / 会社名 / 氏名 / 行番号）。

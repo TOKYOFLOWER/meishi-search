@@ -96,6 +96,21 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 
 一時 action（本番実行後に削除）: `_setupColumns`（列追加）／`_runTests`（test_bulk_ と test_sns_ を実行し結果を返す）
 
+## 2026-09-09 名刺画像の保存と表示
+
+- 名刺DB 末尾に `imageFrontId, imageFrontThumbId, imageBackId, imageBackThumbId`（Drive fileId。`setupSnsBulkColumns_` で冪等追加）
+- Drive フォルダ `meishi-images`（`setupImageFolder_` が作成／再利用し、スクリプトプロパティ `IMAGE_FOLDER_ID` に保存。共有設定は変更しない）。ファイル名 `{contactId}_front.jpg` `_front_thumb.jpg` `_back.jpg` `_back_thumb.jpg`。上書き時は旧ファイルをゴミ箱へ
+- appsscript.json に `oauthScopes`（spreadsheets / drive / script.external_request）を明示 → **デプロイ後に再承認が必要**（GAS エディタで `setupImageFolder_` を実行して承認）
+- action:
+  - `addCard` は `card.images = {front:{full,thumb}, back?:{full,thumb}}`（base64 JPEG）を受け取ると保存。無い／失敗でも登録は成功（応答に `images` を追加、既存キー不変）
+  - `attachImages` `{contactId, images}` → `{contactId, imageFrontId, imageFrontThumbId, imageBackId, imageBackThumbId}`。`not_found` / `no_images` / `drive_error`
+  - `cardImage` `{contactId, side:'front'|'back', size:'thumb'|'full'}` → `{image: base64|null, mime, hasFront, hasBack}`（fileId が無ければ `image:null`）
+  - `cardsWithoutImage` → `{items:[{contactId, sourceFile}]}`（imageFrontId が空で備考が `scan:<元ファイル名>` の人物）
+- bootstrap / newCards / search / person の応答に画像データは含めない（`CARD_LIST_COLS` に画像列を入れていない）
+- ingest.py: `build_card_images()` で縮小画像を生成し addCard に同梱。`--backfill [--dry-run]` で cardsWithoutImage → `E:\namecardscan\done\**` / `error\` から元ファイルを探し attachImages
+- フロント: 人物詳細・整理モードで `cardImage(thumb)` を非同期（オーバーレイなし）取得しサムネ表示、タップで full を取得して拡大モーダル。取得済みはメモリキャッシュ、整理モードでは次の1人を先読み
+- 検証: `test_image_`（ハーネス: attach→4列に fileId、cardImage thumb/full、fileId 空で null、cardsWithoutImage、not_found / no_images）合格。実 Drive での動作はデプロイ後に GAS エディタで `test_image_` を実行して確認
+
 ## 2026-09-09 初期表示の高速化（bootstrap 1本化＋CacheService）
 
 - 新 action `bootstrap` `{days?:1|3|7|30(既定7), onlyUnorganized?:bool(既定true)}` → `{stats, newCards(+onlyUnorganized), tags, eventNames, filters, cached, generatedAt}`。各シートの getValues は1回ずつ（名刺DB は必要列だけ2ブロック、人物管理・接触履歴は全列1回）。個別 action（stats / newCards / tags / eventNames / filters / ping）は契約不変で存続
@@ -124,6 +139,7 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 | シート | 追加列 | 備考 |
 |---|---|---|
 | 名刺DB | `importBatchId` | addCard: `scan-YYYYMMDD`（ingest.py が `batch_id` を送信）／Eight CSV: `eight-YYYYMMDD-HHmm` |
+| 名刺DB | `imageFrontId, imageFrontThumbId, imageBackId, imageBackThumbId` | Drive（meishi-images）の fileId。画像本体は置かない |
 | 人物管理（新規） | `contactId, organized, importance, relationship, tags, needs, canIntroduce, wantIntroduce, nextAction, nextActionDate, memo, facebookUrl, instagramUrl, linkedinUrl, xUrl, youtubeUrl, otherSnsUrl, snsCheckedAt, createdAt, updatedAt` | contactId = 名刺DB.id。日付列は書式 `@` |
 | 接触履歴（新規） | `contactId, contactDate, eventName, contactType, memo, followUp, followDate, createdAt` | 重複キー contactId+contactDate+eventName+contactType |
 
@@ -131,7 +147,7 @@ docs/ も存在しなかった。ユーザーから第1段階仕様書と追加�
 
 ## 追加 action 一覧
 
-`bootstrap` `stats` `newCards` `person` `savePerson` `markOrganized` `addContact` `eventNames` `tags` `snsMarkChecked` `bulkContactPreview` `bulkContactApply` `snsDetectFromSite` `snsSearchLinks` `snsSave` `snsRemove`（入出力は上の契約表）。
+`bootstrap` `cardImage` `attachImages` `cardsWithoutImage` `stats` `newCards` `person` `savePerson` `markOrganized` `addContact` `eventNames` `tags` `snsMarkChecked` `bulkContactPreview` `bulkContactApply` `snsDetectFromSite` `snsSearchLinks` `snsSave` `snsRemove`（入出力は上の契約表）。
 一時 action `_setupColumns` / `_runTests` は 2026-09-09 に本番（デプロイ @9）で各1回実行し、結果は列追加 OK（2回目は追加なし）・test_bulk_ 8/8 合格・test_sns_ 12/12 合格。実行後にコードから削除して push 済み（`setupSnsBulkColumns_` / `test_bulk_` / `test_sns_` は GAS エディタから実行可能）。
 削除版のデプロイ（`clasp -u tokyoflower deploy -i <既存ID> -d "SNS/一括設定 追加"`）は権限判定でブロックされたため、最終レポートの手順で再実行が必要（それまで @9 には認証必須の一時 action が残る）。
 

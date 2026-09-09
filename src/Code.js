@@ -22,6 +22,10 @@ var HEADER = ['id', '会社名', '部署名', '役職', '役職レベル', '氏�
 var PERSON_SHEET = '人物管理';
 var HISTORY_SHEET = '接触履歴';
 var BATCH_COL = 'importBatchId';
+// 名刺画像（Drive 非公開フォルダの fileId を名刺DB 末尾列に保持。画像本体はシートに置かない）
+var IMAGE_COLS = ['imageFrontId', 'imageFrontThumbId', 'imageBackId', 'imageBackThumbId'];
+var IMAGE_FOLDER_NAME = 'meishi-images';
+var IMAGE_FOLDER_PROP = 'IMAGE_FOLDER_ID';
 var PERSON_HEADER = ['contactId', 'organized', 'importance', 'relationship', 'tags', 'needs',
   'canIntroduce', 'wantIntroduce', 'nextAction', 'nextActionDate', 'memo',
   'facebookUrl', 'instagramUrl', 'linkedinUrl', 'xUrl', 'youtubeUrl', 'otherSnsUrl',
@@ -87,6 +91,12 @@ function doPost(e) {
       out = addCardToSheet(body.card || {});
     } else if (body.action === 'bootstrap') {
       out = bootstrap_(body);
+    } else if (body.action === 'cardImage') {
+      out = cardImage_(body);
+    } else if (body.action === 'attachImages') {
+      out = attachImages_(body);
+    } else if (body.action === 'cardsWithoutImage') {
+      out = { ok: true, data: cardsWithoutImage_() };
     } else if (body.action === 'stats') {
       out = { ok: true, data: computeStats_() };
     } else if (body.action === 'newCards') {
@@ -657,7 +667,12 @@ function addCardToSheet(card) {
     var newRowNum = sh.getLastRow() + 1;
     sh.getRange(newRowNum, 1, 1, row.length).setValues([row]);
     invalidateBootstrapCache_();
-    return { ok: true, duplicate: false, row: newRowNum, id: newId };
+    var imageIds = null;
+    if (card.images) {
+      try { imageIds = saveCardImages_(newId, card.images); }
+      catch (e) { Logger.log('addCard: 画像保存に失敗（登録は継続）: ' + newId + ' ' + e); }
+    }
+    return { ok: true, duplicate: false, row: newRowNum, id: newId, images: imageIds };
   } finally {
     lock.releaseLock();
   }
@@ -719,11 +734,13 @@ function setupSnsBulkColumns_() {
   var lastCol = Math.max(cardsSh.getLastColumn(), 1);
   var cardsHeaderVals = cardsSh.getRange(1, 1, 1, lastCol).getValues()[0];
   var cardsC = colIndex_(cardsHeaderVals);
-  if (cardsC[BATCH_COL] === undefined) {
-    cardsSh.getRange(1, cardsHeaderVals.length + 1).setValue(BATCH_COL);
-    cardsHeaderVals = cardsHeaderVals.concat([BATCH_COL]);
-    added.push(BATCH_COL);
-  }
+  [BATCH_COL].concat(IMAGE_COLS).forEach(function (col) {
+    if (cardsC[col] !== undefined) return;
+    cardsSh.getRange(1, cardsHeaderVals.length + 1).setValue(col);
+    cardsHeaderVals = cardsHeaderVals.concat([col]);
+    cardsC[col] = cardsHeaderVals.length - 1;
+    added.push(col);
+  });
 
   var personRes = ensureSheetWithHeader_(PERSON_SHEET, PERSON_HEADER);
   var histRes = ensureSheetWithHeader_(HISTORY_SHEET, HISTORY_HEADER);
@@ -1115,6 +1132,209 @@ function getEventNames_(pre) {
     return la < lb ? 1 : (la > lb ? -1 : 0);
   });
   return { items: items.slice(0, 30) };
+}
+
+/* ==================================================================
+ *  名刺画像（Drive 非公開フォルダに保存し、認証付き action でのみ配信）
+ * ================================================================== */
+// 冪等: Drive に meishi-images フォルダを用意し、ID をスクリプトプロパティに保存する（共有設定は変更しない）
+function setupImageFolder_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty(IMAGE_FOLDER_PROP);
+  if (id) {
+    try { DriveApp.getFolderById(id); return id; } catch (e) { /* 消えている場合は作り直す */ }
+  }
+  var it = DriveApp.getFoldersByName(IMAGE_FOLDER_NAME);
+  var folder = it.hasNext() ? it.next() : DriveApp.createFolder(IMAGE_FOLDER_NAME);
+  id = folder.getId();
+  props.setProperty(IMAGE_FOLDER_PROP, id);
+  Logger.log('画像フォルダ: ' + IMAGE_FOLDER_NAME + ' (' + id + ')');
+  return id;
+}
+function getImageFolder_() { return DriveApp.getFolderById(setupImageFolder_()); }
+
+// base64(JPEG) を Drive に保存して fileId を返す
+function saveImageFile_(folder, name, b64) {
+  var bytes = Utilities.base64Decode(String(b64 || ''));
+  if (!bytes || !bytes.length) throw new Error('empty image: ' + name);
+  var blob = Utilities.newBlob(bytes, 'image/jpeg', name);
+  return folder.createFile(blob).getId();
+}
+function trashFile_(id) {
+  if (!id) return;
+  try { DriveApp.getFileById(String(id)).setTrashed(true); } catch (e) { /* noop */ }
+}
+// images = {front:{full,thumb}, back?:{full,thumb}} を保存し、名刺DB の画像4列に fileId を書く。
+// 既に fileId がある列を上書きする場合は旧ファイルをゴミ箱へ。戻り値は4列の fileId。
+function saveCardImages_(contactId, images) {
+  images = images || {};
+  var d = readCards_(['id'].concat(IMAGE_COLS)), c = colIndex_(d.header);
+  var rowIdx = -1;
+  for (var i = 0; i < d.rows.length; i++) { if (String(d.rows[i][c['id']]) === contactId) { rowIdx = i; break; } }
+  if (rowIdx < 0) throw new Error('not_found: ' + contactId);
+  if (IMAGE_COLS.some(function (col) { return c[col] === undefined; })) {
+    setupSnsBulkColumns_();
+    d = readCards_(['id'].concat(IMAGE_COLS)); c = colIndex_(d.header);
+  }
+  var folder = getImageFolder_();
+  var sh = getSheet_();
+  var cur = d.rows[rowIdx];
+  var out = {};
+  var plan = [
+    ['imageFrontId', images.front && images.front.full, '_front.jpg'],
+    ['imageFrontThumbId', images.front && images.front.thumb, '_front_thumb.jpg'],
+    ['imageBackId', images.back && images.back.full, '_back.jpg'],
+    ['imageBackThumbId', images.back && images.back.thumb, '_back_thumb.jpg']
+  ];
+  var any = false;
+  plan.forEach(function (pl) {
+    var col = pl[0], b64 = pl[1], suffix = pl[2];
+    var oldId = String(cur[c[col]] || '');
+    if (!b64) { out[col] = oldId; return; }
+    var newId = saveImageFile_(folder, contactId + suffix, b64);
+    sh.getRange(rowIdx + 2, c[col] + 1).setValue(newId);
+    if (oldId && oldId !== newId) trashFile_(oldId);
+    out[col] = newId;
+    any = true;
+  });
+  if (!any) throw new Error('no_images');
+  return out;
+}
+
+// 既存行に画像だけ後付け（バックフィル用）
+function attachImages_(input) {
+  input = input || {};
+  var id = String(input.contactId || input.id || '').trim();
+  if (!id) return { ok: false, error: 'missing_id' };
+  var images = input.images || {};
+  var hasAny = (images.front && (images.front.full || images.front.thumb)) || (images.back && (images.back.full || images.back.thumb));
+  if (!hasAny) return { ok: false, error: 'no_images' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var ids;
+    try { ids = saveCardImages_(id, images); }
+    catch (e) {
+      var msg = String(e);
+      if (msg.indexOf('not_found') >= 0) return { ok: false, error: 'not_found' };
+      if (msg.indexOf('no_images') >= 0) return { ok: false, error: 'no_images' };
+      Logger.log('attachImages: ' + id + ' ' + msg);
+      return { ok: false, error: 'drive_error' };
+    }
+    return { ok: true, data: { contactId: id, imageFrontId: ids.imageFrontId || '', imageFrontThumbId: ids.imageFrontThumbId || '', imageBackId: ids.imageBackId || '', imageBackThumbId: ids.imageBackThumbId || '' } };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 画像を base64 で返す（認証済みの人しか呼べない。fileId が無ければ image:null）
+function cardImage_(input) {
+  input = input || {};
+  var id = String(input.contactId || input.id || '').trim();
+  if (!id) return { ok: false, error: 'missing_id' };
+  var side = input.side === 'back' ? 'back' : 'front';
+  var size = input.size === 'full' ? 'full' : 'thumb';
+  var d = readCards_(['id'].concat(IMAGE_COLS)), c = colIndex_(d.header);
+  var row = null;
+  for (var i = 0; i < d.rows.length; i++) { if (String(d.rows[i][c['id']]) === id) { row = d.rows[i]; break; } }
+  if (!row) return { ok: false, error: 'not_found' };
+  var g = function (col) { return c[col] !== undefined ? String(row[c[col]] || '').trim() : ''; };
+  var hasFront = !!(g('imageFrontId') || g('imageFrontThumbId'));
+  var hasBack = !!(g('imageBackId') || g('imageBackThumbId'));
+  var col = (side === 'front' ? 'imageFront' : 'imageBack') + (size === 'full' ? 'Id' : 'ThumbId');
+  var fileId = g(col);
+  // サムネが無く full だけある（またはその逆）場合はもう一方で代替
+  if (!fileId) fileId = g((side === 'front' ? 'imageFront' : 'imageBack') + (size === 'full' ? 'ThumbId' : 'Id'));
+  if (!fileId) return { ok: true, data: { image: null, mime: 'image/jpeg', hasFront: hasFront, hasBack: hasBack } };
+  try {
+    var blob = DriveApp.getFileById(fileId).getBlob();
+    return { ok: true, data: { image: Utilities.base64Encode(blob.getBytes()), mime: blob.getContentType() || 'image/jpeg', hasFront: hasFront, hasBack: hasBack } };
+  } catch (e) {
+    Logger.log('cardImage: 取得失敗 ' + id + ' ' + col + ' ' + e);
+    return { ok: true, data: { image: null, mime: 'image/jpeg', hasFront: hasFront, hasBack: hasBack, error: 'drive_error' } };
+  }
+}
+
+// 画像未登録で備考に元ファイル名（scan:<name>）がある人物の一覧（バックフィル用）
+function cardsWithoutImage_() {
+  var d = readCards_(['id', '備考', 'imageFrontId', 'imageFrontThumbId']), c = colIndex_(d.header);
+  var items = [];
+  if (c['備考'] === undefined) return { items: items };
+  d.rows.forEach(function (r) {
+    var front = c['imageFrontId'] !== undefined ? String(r[c['imageFrontId']] || '').trim() : '';
+    var thumb = c['imageFrontThumbId'] !== undefined ? String(r[c['imageFrontThumbId']] || '').trim() : '';
+    if (front || thumb) return;
+    var biko = String(r[c['備考']] || '');
+    var m = biko.match(/^scan:([^\/]+?)(?:\s*\/|$)/);
+    if (!m) return;
+    var name = m[1].trim();
+    if (!name) return;
+    items.push({ contactId: String(r[c['id']]), sourceFile: name });
+  });
+  return { items: items };
+}
+
+// 1x1 JPEG（テスト用ダミー画像）
+var TEST_JPEG_B64_ = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
+// 画像テスト: (a) attachImages → 4列に fileId (b) cardImage thumb/full が返る (c) fileId 空で image:null。テスト行・ファイルは削除
+function test_image_() {
+  var checks = [];
+  var testIds = [], fileIds = [];
+  try {
+    setupSnsBulkColumns_();
+    var sh = getSheet_();
+    var d = readAll_(), c = colIndex_(d.header);
+    var header = d.header;
+    var lastNum = 0;
+    d.rows.forEach(function (r) {
+      var m = String(r[c['id']]).match(/^M(\d+)$/);
+      if (m) lastNum = Math.max(lastNum, parseInt(m[1], 10));
+    });
+    var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    var idA = 'M' + ('00000' + (lastNum + 1)).slice(-5);
+    var idB = 'M' + ('00000' + (lastNum + 2)).slice(-5);
+    testIds.push(idA, idB);
+    var mk = function (id, nm) {
+      var record = { 'id': id, '会社名': 'テスト株式会社_image', '氏名': nm, '姓': 'テスト', '名': nm.split(' ')[1], '取込日': today, 'importBatchId': 'test-image', '備考': 'scan:_test_' + id + '.jpg / メモ' };
+      return header.map(function (h) { return record.hasOwnProperty(h) ? record[h] : ''; });
+    };
+    var startRow = sh.getLastRow() + 1;
+    sh.getRange(startRow, 1, 2, header.length).setValues([mk(idA, 'テスト 画像あり'), mk(idB, 'テスト 画像なし')]);
+
+    var images = { front: { full: TEST_JPEG_B64_, thumb: TEST_JPEG_B64_ }, back: { full: TEST_JPEG_B64_, thumb: TEST_JPEG_B64_ } };
+    var r1 = attachImages_({ contactId: idA, images: images });
+    checks.push({ name: 'attach_ok', ok: !!r1.ok, detail: JSON.stringify(r1) });
+    if (r1.ok) {
+      IMAGE_COLS.forEach(function (col) { if (r1.data[col]) fileIds.push(r1.data[col]); });
+      checks.push({ name: 'attach_4_ids', ok: IMAGE_COLS.every(function (col) { return !!r1.data[col]; }), detail: JSON.stringify(r1.data) });
+      var d2 = readCards_(['id'].concat(IMAGE_COLS)), c2 = colIndex_(d2.header);
+      var rowA = d2.rows.filter(function (r) { return String(r[c2['id']]) === idA; })[0];
+      checks.push({ name: 'sheet_4_cols_set', ok: !!rowA && IMAGE_COLS.every(function (col) { return !!String(rowA[c2[col]] || ''); }), detail: rowA ? JSON.stringify(IMAGE_COLS.map(function (col) { return rowA[c2[col]]; })) : 'row missing' });
+    }
+    var t1 = cardImage_({ contactId: idA, side: 'front', size: 'thumb' });
+    checks.push({ name: 'cardImage_thumb', ok: t1.ok && !!t1.data.image && t1.data.hasFront && t1.data.hasBack, detail: JSON.stringify({ ok: t1.ok, len: t1.ok && t1.data.image ? t1.data.image.length : 0, mime: t1.ok ? t1.data.mime : '' }) });
+    var t2 = cardImage_({ contactId: idA, side: 'back', size: 'full' });
+    checks.push({ name: 'cardImage_full_back', ok: t2.ok && !!t2.data.image, detail: JSON.stringify({ ok: t2.ok, len: t2.ok && t2.data.image ? t2.data.image.length : 0 }) });
+    var t3 = cardImage_({ contactId: idB, side: 'front', size: 'thumb' });
+    checks.push({ name: 'cardImage_none_is_null', ok: t3.ok && t3.data.image === null && t3.data.hasFront === false, detail: JSON.stringify(t3) });
+    var w = cardsWithoutImage_();
+    var wb = w.items.filter(function (x) { return x.contactId === idB; })[0];
+    var wa = w.items.filter(function (x) { return x.contactId === idA; })[0];
+    checks.push({ name: 'withoutImage_lists_B_only', ok: !!wb && wb.sourceFile === '_test_' + idB + '.jpg' && !wa, detail: JSON.stringify({ wa: wa, wb: wb }) });
+    var r2 = attachImages_({ contactId: 'M99999', images: images });
+    checks.push({ name: 'attach_not_found', ok: !r2.ok && r2.error === 'not_found', detail: JSON.stringify(r2) });
+    var r3 = attachImages_({ contactId: idB, images: {} });
+    checks.push({ name: 'attach_no_images', ok: !r3.ok && r3.error === 'no_images', detail: JSON.stringify(r3) });
+  } catch (e) {
+    checks.push({ name: 'exception', ok: false, detail: String(e) });
+  } finally {
+    fileIds.forEach(trashFile_);
+    deleteTestRows_(testIds);
+  }
+  var pass = checks.length > 0 && checks.every(function (x) { return x.ok; });
+  var result = { pass: pass, checks: checks };
+  Logger.log(JSON.stringify(result));
+  return result;
 }
 
 /* ==================================================================

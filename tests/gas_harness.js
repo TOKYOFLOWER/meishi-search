@@ -12,6 +12,23 @@ const Utilities = {
 const logs = [];
 const Logger = { log: (x) => logs.push(String(x)) };
 const LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
+// Drive / Properties / Cache のスタブ（画像テスト用。メモリ上のフォルダ・ファイル）
+const props = {};
+const PropertiesService = { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = v; } }) };
+const cacheStore = {};
+const CacheService = { getScriptCache: () => ({ get: (k) => (k in cacheStore ? cacheStore[k] : null), put: (k, v) => { cacheStore[k] = v; }, remove: (k) => { delete cacheStore[k]; }, removeAll: (ks) => ks.forEach((k) => delete cacheStore[k]) }) };
+const driveFiles = {}, driveFolders = {}; let driveSeq = 0;
+function makeFile(id, blob) { return { getId: () => id, getBlob: () => blob, setTrashed: (t) => { driveFiles[id].trashed = t; }, trashed: false, blob }; }
+function makeFolder(name) { const id = 'folder' + (++driveSeq); const f = { getId: () => id, getName: () => name, createFile: (blob) => { const fid = 'file' + (++driveSeq); driveFiles[fid] = makeFile(fid, blob); return driveFiles[fid]; } }; driveFolders[id] = f; return f; }
+const DriveApp = {
+  getFoldersByName: (name) => { const arr = Object.values(driveFolders).filter((f) => f.getName() === name); let i = 0; return { hasNext: () => i < arr.length, next: () => arr[i++] }; },
+  createFolder: (name) => makeFolder(name),
+  getFolderById: (id) => { if (!driveFolders[id]) throw new Error('no folder'); return driveFolders[id]; },
+  getFileById: (id) => { if (!driveFiles[id] || driveFiles[id].trashed) throw new Error('no file'); return driveFiles[id]; }
+};
+Utilities.base64Decode = (str) => Buffer.from(String(str), 'base64');
+Utilities.base64Encode = (bytes) => Buffer.from(bytes).toString('base64');
+Utilities.newBlob = (bytes, mime, name) => ({ getBytes: () => bytes, getContentType: () => mime, getName: () => name });
 function makeSheet(name) {
   const s = { name, data: [], frozen: 0 };
   function range(r, c, nr, nc) {
@@ -39,11 +56,11 @@ const db = (sheets['名刺DB'] = makeSheet('名刺DB'));
 db.data.push(HEADER.slice());
 db.data.push(['M00001','既存商事','','代表取締役','経営者','既存 太郎','既存','太郎','その他','','','東京都','中央区','東京都中央区銀座1-1','','','','https://example.com', new Date(2025, 0, 15), '2025-01-20', '', '']);
 db.data.push(['M00002','既存商事','','','担当','既存 花子','既存','花子','その他','','','','','','','','','', '', '2025-01-20', '', '']);
-const api = new Function('SpreadsheetApp','Utilities','Logger','LockService', src + '\nreturn { setupSnsBulkColumns_, test_bulk_, test_addCard_, test_follow_, test_sns_, searchCards, getPerson_ };');
-const g = api(SpreadsheetApp, Utilities, Logger, LockService);
+const api = new Function('SpreadsheetApp','Utilities','Logger','LockService','PropertiesService','CacheService','DriveApp', src + '\nreturn { setupSnsBulkColumns_, test_bulk_, test_addCard_, test_follow_, test_sns_, test_image_, searchCards, getPerson_ };');
+const g = api(SpreadsheetApp, Utilities, Logger, LockService, PropertiesService, CacheService, DriveApp);
 const rows = () => Object.keys(sheets).map((n) => n + '=' + (sheets[n].data.length - 1)).join(' ');
 console.log('setup:', JSON.stringify(g.setupSnsBulkColumns_().added), '| rows', rows());
-for (const t of ['test_bulk_', 'test_addCard_', 'test_follow_', 'test_sns_']) {
+for (const t of ['test_bulk_', 'test_addCard_', 'test_follow_', 'test_sns_', 'test_image_']) {
   const before = rows();
   const r = g[t]();
   console.log(t, r.pass ? 'PASS' : 'FAIL', r.checks.map((c) => (c.ok ? 'OK:' : 'NG:') + c.name + (c.ok ? '' : ' -> ' + c.detail)).join(' | '));
@@ -51,3 +68,4 @@ for (const t of ['test_bulk_', 'test_addCard_', 'test_follow_', 'test_sns_']) {
 }
 console.log('既存行の交換日(Date)保持:', sheets['名刺DB'].data[1][18] instanceof Date, '| 既存行2 交換日:', JSON.stringify(sheets['名刺DB'].data[2][18]));
 console.log(logs.filter((l) => l.indexOf('bulkContactApply:') === 0).join(' || '));
+console.log('Drive: フォルダ', Object.keys(driveFolders).length, '| ファイル(未削除)', Object.values(driveFiles).filter((f) => !f.trashed).length, '| IMAGE_FOLDER_ID', props.IMAGE_FOLDER_ID);

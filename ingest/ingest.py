@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
 import json
 import logging
 import os
@@ -34,6 +35,12 @@ from typing import Any, Optional
 import anthropic
 import requests
 from dotenv import load_dotenv
+from PIL import Image, ImageOps
+
+try:
+    import pymupdf  # PDFレンダリング用。ingest/README.mdの手順でインストールする。
+except ImportError:  # pragma: no cover - 未インストール環境向けフォールバック
+    pymupdf = None
 
 # --------------------------------------------------------------------------
 # 定数
@@ -48,6 +55,15 @@ TARGET_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
 WRITE_IN_PROGRESS_SECONDS = 10  # 書込中とみなすmtime猶予秒数
 WATCH_INTERVAL_SECONDS = 60
 IMAGE_SIZE_WARN_BYTES = 5 * 1024 * 1024  # 5MB
+
+# 名刺画像(表裏サムネイル)の生成設定
+CARD_IMAGE_LONG_EDGE_FULL = 1200
+CARD_IMAGE_LONG_EDGE_THUMB = 320
+CARD_IMAGE_QUALITY_FULL = 80
+CARD_IMAGE_QUALITY_THUMB = 70
+CARD_IMAGE_QUALITY_FALLBACKS = [80, 65, 50, 40]  # 合計サイズ超過時に順に下げる品質
+CARD_IMAGE_TOTAL_SIZE_LIMIT = 1_000_000  # base64文字列の合計上限(バイト)
+CARD_IMAGE_PDF_DPI = 150
 
 # GAS に送る際にリトライしない（=最終的なエラーとして扱う）エラーコード
 GAS_NON_RETRYABLE_ERRORS = {"auth", "missing_required"}
@@ -275,6 +291,119 @@ def build_content_block(path: Path) -> dict[str, Any]:
     }
 
 
+def _prepare_pil_image(img: Image.Image) -> Image.Image:
+    """EXIFの回転を反映し、RGBA/PなどをRGBに変換する。"""
+    img = ImageOps.exif_transpose(img)
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    return img
+
+
+def _load_card_page_images(path: Path) -> list[Image.Image]:
+    """名刺ファイルからページ画像(PIL Image)のリストを返す。
+
+    画像(jpg/jpeg/png)は表面のみの1枚、PDFは1ページ目=表面・2ページ目=裏面として
+    最大2枚を返す(3ページ目以降は無視する)。
+    """
+    ext = path.suffix.lower()
+    if ext in (".jpg", ".jpeg", ".png"):
+        with Image.open(path) as im:
+            im.load()
+            return [_prepare_pil_image(im)]
+
+    if ext == ".pdf":
+        if pymupdf is None:
+            raise RuntimeError("pymupdfが未インストールのためPDFから画像を生成できません")
+        zoom = CARD_IMAGE_PDF_DPI / 72.0
+        matrix = pymupdf.Matrix(zoom, zoom)
+        images: list[Image.Image] = []
+        with pymupdf.open(str(path)) as doc:
+            for page_index in range(min(2, doc.page_count)):
+                page = doc.load_page(page_index)
+                pix = page.get_pixmap(matrix=matrix)
+                mode = "RGBA" if pix.alpha else "RGB"
+                pil_img = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
+                images.append(_prepare_pil_image(pil_img))
+        return images
+
+    raise ValueError(f"未対応の拡張子です: {ext}")
+
+
+def _resize_to_long_edge(img: Image.Image, long_edge: int) -> Image.Image:
+    """長辺がlong_edge以下になるよう縮小する(既に小さければそのまま)。"""
+    width, height = img.size
+    scale = long_edge / max(width, height)
+    if scale >= 1:
+        return img
+    new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    return img.resize(new_size, Image.LANCZOS)
+
+
+def _encode_jpeg_b64(img: Image.Image, quality: int) -> str:
+    """PIL画像をJPEGエンコードし、標準base64文字列(dataプレフィックスなし)で返す。"""
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return base64.standard_b64encode(buf.getvalue()).decode("ascii")
+
+
+def _render_card_side(img: Image.Image, quality: int, thumb_quality: int) -> dict[str, str]:
+    """1面(表 or 裏)分の full/thumb base64 を生成する。"""
+    full_img = _resize_to_long_edge(img, CARD_IMAGE_LONG_EDGE_FULL)
+    thumb_img = _resize_to_long_edge(img, CARD_IMAGE_LONG_EDGE_THUMB)
+    return {
+        "full": _encode_jpeg_b64(full_img, quality),
+        "thumb": _encode_jpeg_b64(thumb_img, thumb_quality),
+    }
+
+
+def _card_images_total_size(images: dict[str, dict[str, str]]) -> int:
+    """imagesに含まれるbase64文字列の合計文字数(≒バイト数)を返す。"""
+    return sum(len(v) for side in images.values() for v in side.values())
+
+
+def build_card_images(path: Path) -> Optional[dict[str, dict[str, str]]]:
+    """名刺ファイルから表裏の縮小画像(base64)を組み立てる。
+
+    戻り値: {"front": {"full": b64, "thumb": b64}, "back": {...}}(裏面がある場合のみback付き)。
+    画像/PDFの読み込みや変換に失敗した場合はNoneを返し、警告ログのみ出す
+    (カード登録自体は続行させるため、ここでは例外を送出しない)。
+    """
+    logger = logging.getLogger("ingest")
+    try:
+        pages = _load_card_page_images(path)
+    except Exception as exc:
+        logger.warning("名刺画像の生成に失敗しました(カード登録は続行します): %s: %s", path.name, exc)
+        return None
+
+    if not pages:
+        return None
+
+    side_names = ["front", "back"]
+    raw_pages = list(zip(side_names, pages[:2]))
+
+    images: Optional[dict[str, dict[str, str]]] = None
+    try:
+        for quality in CARD_IMAGE_QUALITY_FALLBACKS:
+            thumb_quality = min(CARD_IMAGE_QUALITY_THUMB, quality)
+            images = {
+                side_name: _render_card_side(page_img, quality, thumb_quality)
+                for side_name, page_img in raw_pages
+            }
+            if _card_images_total_size(images) <= CARD_IMAGE_TOTAL_SIZE_LIMIT:
+                break
+
+        if images is not None and _card_images_total_size(images) > CARD_IMAGE_TOTAL_SIZE_LIMIT:
+            if "back" in images:
+                images["back"].pop("full", None)
+        if images is not None and _card_images_total_size(images) > CARD_IMAGE_TOTAL_SIZE_LIMIT:
+            images.pop("back", None)
+    except Exception as exc:
+        logger.warning("名刺画像の生成に失敗しました(カード登録は続行します): %s: %s", path.name, exc)
+        return None
+
+    return images
+
+
 def strip_json_fence(text: str) -> str:
     """```json ... ``` のようなコードフェンスを剥がし、{ }の範囲を切り出す。"""
     stripped = text.strip()
@@ -389,20 +518,28 @@ class GasError(Exception):
     """GASへの送信に失敗したことを表す例外。"""
 
 
-def send_to_gas(cfg: Config, card: dict[str, Any]) -> dict[str, Any]:
-    """GAS Web Appにカード情報を送信し、レスポンスのJSONを返す。
+# attachImages固有の「リトライしても無駄」なエラー(共通のauth/missing_requiredに追加)
+ATTACH_IMAGES_NON_RETRYABLE_ERRORS = GAS_NON_RETRYABLE_ERRORS | {"not_found", "no_images"}
 
-    最大3回リトライする。ただしGASが返すerrorが"auth"や"missing_required"の
-    場合はリトライせず、その時点で例外を送出する。
+
+def post_gas(
+    cfg: Config,
+    action: str,
+    payload: dict[str, Any],
+    non_retryable_errors: Optional[set[str]] = None,
+) -> dict[str, Any]:
+    """GAS Web Appにaction/payloadを送信し、レスポンスのJSONを返す共通関数。
+
+    最大3回リトライする。ただしGASが返すerrorがnon_retryable_errors(既定は
+    GAS_NON_RETRYABLE_ERRORS)に含まれる場合はリトライせず、その時点で例外を送出する。
     """
     logger = logging.getLogger("ingest")
-    payload = {
-        "user": cfg.app_user,
-        "pass": cfg.app_pass,
-        "action": "addCard",
-        "card": card,
-    }
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    if non_retryable_errors is None:
+        non_retryable_errors = GAS_NON_RETRYABLE_ERRORS
+
+    body_dict: dict[str, Any] = {"user": cfg.app_user, "pass": cfg.app_pass, "action": action}
+    body_dict.update(payload)
+    body = json.dumps(body_dict, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "text/plain;charset=utf-8"}
 
     last_error = "不明なエラー"
@@ -424,7 +561,7 @@ def send_to_gas(cfg: Config, card: dict[str, Any]) -> dict[str, Any]:
                     if result.get("ok"):
                         return result
                     error_code = result.get("error", "")
-                    if error_code in GAS_NON_RETRYABLE_ERRORS:
+                    if error_code in non_retryable_errors:
                         raise GasError(f"GASエラー(リトライ不要): {error_code}")
                     last_error = f"GASエラー: {error_code or result}"
 
@@ -434,6 +571,15 @@ def send_to_gas(cfg: Config, card: dict[str, Any]) -> dict[str, Any]:
             time.sleep(delay)
 
     raise GasError(f"GAS送信に失敗しました(リトライ上限): {last_error}")
+
+
+def send_to_gas(cfg: Config, card: dict[str, Any]) -> dict[str, Any]:
+    """GAS Web Appにカード情報を送信し、レスポンスのJSONを返す(action=addCard)。
+
+    最大3回リトライする。ただしGASが返すerrorが"auth"や"missing_required"の
+    場合はリトライせず、その時点で例外を送出する。
+    """
+    return post_gas(cfg, "addCard", {"card": card})
 
 
 # --------------------------------------------------------------------------
@@ -546,8 +692,16 @@ def process_file(
     card["scanned_at"] = scanned_at
     card["batch_id"] = "scan-" + now.strftime("%Y%m%d")
 
+    images = build_card_images(path)
+    if images is not None:
+        card["images"] = images
+
     if dry_run:
         print(json.dumps(parsed, ensure_ascii=False, indent=2))
+        if images is not None:
+            # 画像本体は表示せず、base64文字列の長さ(バイト数相当)だけ出す
+            sizes = {side: {k: len(v) for k, v in sides.items()} for side, sides in images.items()}
+            print(json.dumps({"images_base64_length": sizes}, ensure_ascii=False, indent=2))
         logger.info("ok(dry-run) | %s | %s | %s", path.name, card["company"], card["name"])
         return "ok"
 
@@ -637,6 +791,126 @@ def run_single_file(client: anthropic.Anthropic, cfg: Config, file_path: Path, d
 
 
 # --------------------------------------------------------------------------
+# バックフィル(画像未登録の名刺にscan元ファイルから画像を後付けする)
+# --------------------------------------------------------------------------
+
+_NUMBERED_SUFFIX_RE = re.compile(r"_(\d+)$")
+
+
+def _find_source_file(watch_dir: Path, source_file: str) -> Optional[Path]:
+    """sourceFileに対応する実ファイルを WATCH_DIR/done/**(再帰) と WATCH_DIR/error/ から探す。
+
+    完全一致を優先し、無ければ unique_dest_path が付けた連番(stem_N.suffix)も候補にする。
+    dup_ 接頭辞のファイル(重複扱いで退避されたもの)は対象外。
+    見つからなければNoneを返す。
+    """
+    if not source_file:
+        return None
+
+    done_dir = watch_dir / "done"
+    error_dir = watch_dir / "error"
+
+    candidates: list[Path] = []
+    if done_dir.exists():
+        candidates.extend(p for p in done_dir.rglob("*") if p.is_file())
+    if error_dir.exists():
+        candidates.extend(p for p in error_dir.glob("*") if p.is_file())
+    candidates = [p for p in candidates if not p.name.startswith("dup_")]
+
+    for p in candidates:
+        if p.name == source_file:
+            return p
+
+    stem = Path(source_file).stem
+    suffix = Path(source_file).suffix
+    numbered: list[tuple[int, Path]] = []
+    for p in candidates:
+        if p.suffix != suffix or not p.stem.startswith(stem + "_"):
+            continue
+        m = _NUMBERED_SUFFIX_RE.search(p.stem[len(stem):])
+        if m:
+            numbered.append((int(m.group(1)), p))
+    if numbered:
+        numbered.sort(key=lambda t: t[0])
+        return numbered[0][1]
+
+    return None
+
+
+def run_backfill(cfg: Config, dry_run: bool) -> bool:
+    """GASのcardsWithoutImageを取得し、見つかったscan元ファイルから画像をattachImagesで紐付ける。
+
+    戻り値: 失敗(見つからない/attachImages失敗)が1件もなければTrue。
+    """
+    logger = logging.getLogger("ingest")
+
+    try:
+        result = post_gas(cfg, "cardsWithoutImage", {})
+    except GasError as exc:
+        logger.error("バックフィル対象の取得に失敗しました: %s", exc)
+        return False
+
+    items = result.get("data", {}).get("items", [])
+    if not items:
+        logger.info("バックフィル対象はありません")
+        return True
+
+    resolved: list[tuple[dict[str, Any], Optional[Path]]] = []
+    for item in items:
+        source_file = str(item.get("sourceFile", ""))
+        found = _find_source_file(cfg.watch_dir, source_file)
+        resolved.append((item, found))
+
+    found_count = sum(1 for _, p in resolved if p is not None)
+    missing_count = len(resolved) - found_count
+
+    if dry_run:
+        logger.info("対象 %d件 / 紐付け可能 %d件 / 見つからない %d件", len(resolved), found_count, missing_count)
+        for item, path in resolved:
+            contact_id = item.get("contactId", "")
+            source_file = item.get("sourceFile", "")
+            if path is not None:
+                logger.info("  found   | %s | %s | %s", contact_id, source_file, path)
+            else:
+                logger.info("  missing | %s | %s | (未検出)", contact_id, source_file)
+        return True
+
+    success_count = 0
+    fail_count = 0
+    for item, path in resolved:
+        contact_id = str(item.get("contactId", ""))
+        source_file = item.get("sourceFile", "")
+
+        if path is None:
+            logger.info("skip | %s | %s | ファイルが見つかりません", contact_id, source_file)
+            fail_count += 1
+            continue
+
+        images = build_card_images(path)
+        if images is None:
+            logger.info("skip | %s | %s | 画像の生成に失敗しました", contact_id, source_file)
+            fail_count += 1
+            continue
+
+        try:
+            post_gas(
+                cfg, "attachImages",
+                {"contactId": contact_id, "images": images},
+                non_retryable_errors=ATTACH_IMAGES_NON_RETRYABLE_ERRORS,
+            )
+        except GasError as exc:
+            logger.info("error | %s | %s | attachImages失敗: %s", contact_id, source_file, exc)
+            fail_count += 1
+            continue
+
+        logger.info("ok | %s | %s", contact_id, source_file)
+        success_count += 1
+
+    logger.info("バックフィル完了: 成功 %d件 / 失敗 %d件", success_count, fail_count)
+    return fail_count == 0
+
+
+# --------------------------------------------------------------------------
 # エントリーポイント
 # --------------------------------------------------------------------------
 
@@ -648,6 +922,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--watch", action="store_true", help="60秒間隔で無限ループする(Ctrl+Cで終了)")
     parser.add_argument("--dry-run", action="store_true", help="GASに送信せず、抽出結果のJSONを標準出力に表示する")
     parser.add_argument("--file", type=str, default=None, help="監視フォルダ外のファイルも含め、指定した1ファイルのみ処理する")
+    parser.add_argument(
+        "--backfill", action="store_true",
+        help="画像が未登録の名刺に、scan元ファイル(done/error配下)から表裏画像を紐付ける(GASのattachImages)",
+    )
     return parser.parse_args(argv)
 
 
@@ -675,11 +953,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     cfg = load_config()
     logger = setup_logging()
 
-    require_gas = not args.dry_run
+    # --backfill はdry-run時もcardsWithoutImage取得でGASに接続するため、常にGAS設定が必要
+    require_gas = args.backfill or not args.dry_run
     err = check_config(cfg, require_gas=require_gas)
     if err:
         logger.error(err)
         return 1
+
+    if args.backfill:
+        ok = run_backfill(cfg, dry_run=args.dry_run)
+        return 0 if ok else 1
 
     client = anthropic.Anthropic(max_retries=2)
 

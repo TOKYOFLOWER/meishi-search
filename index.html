@@ -231,6 +231,28 @@
                  color:var(--ink); text-decoration:none; background:var(--paper);}
   .dimtext{color:var(--muted); font-size:12.5px;}
 
+  /* --- 名刺画像（サムネ／拡大） --- */
+  .cardimgbox{background:#fff; padding:12px 16px; border-bottom:1px solid var(--line);}
+  .cardimgbox:empty{display:none; padding:0; border:none;}
+  .cardimg-placeholder{width:130px; height:82px; border:1px dashed var(--line); border-radius:10px;
+      background:var(--paper); display:flex; align-items:center; justify-content:center;
+      color:var(--muted); font-size:11px;}
+  .cardimg-frame{display:inline-block;}
+  .cardimg-thumb{max-width:220px; width:100%; border-radius:10px; border:1px solid var(--line);
+      box-shadow:0 1px 3px rgba(20,52,42,.08); cursor:zoom-in; display:block;}
+  .cardimg-sides{display:flex; gap:7px; margin-top:8px;}
+
+  /* --- 名刺画像 拡大モーダル --- */
+  .imgviewbg{position:fixed; inset:0; background:#000; z-index:300; display:flex;
+      align-items:center; justify-content:center; overflow:hidden; touch-action:none;}
+  .imgviewclose{position:absolute; top:14px; right:14px; width:38px; height:38px; border-radius:50%;
+      border:none; background:rgba(255,255,255,.18); color:#fff; font-size:20px; line-height:1; z-index:2;}
+  .imgviewstage{width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+      touch-action:none; overflow:hidden;}
+  .imgviewstage img{max-width:92vw; max-height:88vh; touch-action:none; user-select:none;
+      -webkit-user-select:none; will-change:transform; transform-origin:center center;}
+  .imgviewloading{color:#fff; font-size:13px;}
+
   /* --- 処理中オーバーレイ --- */
   #busyOverlay{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:250; display:flex;
                flex-direction:column; align-items:center; justify-content:center; gap:14px;
@@ -329,6 +351,7 @@
   <section data-view="review" id="view-review" hidden>
     <div class="reviewhead" id="reviewHead"></div>
     <div class="personhead" id="reviewPersonHead"></div>
+    <div class="cardimgbox" id="reviewImageBox"></div>
     <div class="reviewbody" id="reviewFormBox"></div>
     <div id="reviewContactBox"></div>
     <div class="reviewnav" id="reviewNav"></div>
@@ -338,6 +361,7 @@
   <section data-view="person" id="view-person" hidden>
     <div class="personhead" id="personHead"></div>
     <div class="infoblock" id="personInfo"></div>
+    <div class="cardimgbox" id="personImageBox"></div>
     <div class="personactsblock acts" id="personActs"></div>
     <div class="histblock" id="personExchangeBlock"></div>
     <div class="histblock" id="personHistBlock"></div>
@@ -440,7 +464,7 @@
   }
   function setCreds(c){ sessionStorage.setItem('meishi_creds', JSON.stringify(c)); }
   function clearCreds(){ sessionStorage.removeItem('meishi_creds'); }
-  function doLogout(){ clearCreds(); location.reload(); }
+  function doLogout(){ clearCreds(); clearImageCache(); location.reload(); }
 
   function getSession(){
     try { return JSON.parse(sessionStorage.getItem('meishi_session')||'{}'); } catch(e){ return {}; }
@@ -483,14 +507,17 @@
     eventNames: '読み込み中…',
     tags: '読み込み中…',
     stats: '読み込み中…',
-    filters: '読み込み中…'
+    filters: '読み込み中…',
+    cardImage: '画像を取得中…'
   };
   function busyMessageFor(action){ return BUSY_MESSAGES[action] || '処理中…'; }
 
   // API: POST(text/plain)でプリフライト回避。creds同梱。mock=1の時はネットワークを使わない。
   // opts.busyMessage で個別メッセージを指定可（無指定時は action ごとの既定メッセージ）
+  // opts.silent===true の場合は showBusy/hideBusy を呼ばない（名刺画像取得などオーバーレイを出したくない場合用）
   async function api(action, extra, opts){
-    showBusy((opts && opts.busyMessage) || busyMessageFor(action));
+    var silent = !!(opts && opts.silent === true);
+    if(!silent){ showBusy((opts && opts.busyMessage) || busyMessageFor(action)); }
     try {
       if(MOCK){ return await mockApi(action, extra||{}); }
       var creds = getCreds() || {};
@@ -502,7 +529,7 @@
       });
       return await res.json();
     } finally {
-      hideBusy();
+      if(!silent){ hideBusy(); }
     }
   }
 
@@ -517,6 +544,163 @@
     });
   }
   function closeModal(){ EL('modalRoot').innerHTML=''; }
+
+  // ==================== 名刺画像（サムネ／拡大） ====================
+  // キー: "id|side|size" → {image,mime,hasFront,hasBack}
+  var IMAGE_CACHE = {};
+  var IMAGE_FETCHES = {}; // 取得中Promiseの共有（二重取得防止）
+  function clearImageCache(){ IMAGE_CACHE = {}; IMAGE_FETCHES = {}; }
+  function fetchCardImage(id, side, size){
+    var key = id+'|'+side+'|'+size;
+    if(IMAGE_CACHE[key]) return Promise.resolve(IMAGE_CACHE[key]);
+    if(IMAGE_FETCHES[key]) return IMAGE_FETCHES[key];
+    var p = api('cardImage', { contactId:id, side:side, size:size }, { silent:true }).then(function(r){
+      delete IMAGE_FETCHES[key];
+      if(r && r.ok){ IMAGE_CACHE[key] = r.data; return r.data; }
+      if(r && r.error==='auth'){ doLogout(); }
+      throw new Error('cardImage_failed');
+    }, function(err){
+      delete IMAGE_FETCHES[key];
+      throw err;
+    });
+    IMAGE_FETCHES[key] = p;
+    return p;
+  }
+
+  // 人物詳細/整理モード共用の名刺画像サムネ部品。
+  // 画像が無い人物（Eight時代）は container を空にし、枠自体を出さない（CSSの :empty で非表示）。
+  function renderCardImageBox(container, id){
+    if(!container) return;
+    container.setAttribute('data-cardimg-id', id);
+    container.innerHTML = '<div class="cardimg-placeholder">名刺画像</div>';
+    function stillCurrent(){ return container.getAttribute('data-cardimg-id') === id; }
+    fetchCardImage(id, 'front', 'thumb').then(function(front){
+      if(!stillCurrent()) return;
+      if(!front || !front.image || !front.hasFront){ container.innerHTML=''; return; }
+      paintCardImageBox(container, id, front);
+    }).catch(function(){
+      if(stillCurrent()) container.innerHTML='';
+    });
+  }
+  function paintCardImageBox(container, id, frontData){
+    var side = 'front';
+    var hasBack = !!frontData.hasBack;
+    function render(data){
+      if(container.getAttribute('data-cardimg-id') !== id) return;
+      var mime = data.mime || 'image/jpeg';
+      var sideLabel = side==='front' ? '表' : '裏';
+      var html = '<div class="cardimg-frame"><img class="cardimg-thumb" src="data:'+esc(mime)+';base64,'+data.image+'" alt="名刺画像（'+sideLabel+'）"></div>';
+      if(hasBack){
+        html += '<div class="cardimg-sides">'
+          + '<div class="chip'+(side==='front'?' on':'')+'" data-side="front">表</div>'
+          + '<div class="chip'+(side==='back'?' on':'')+'" data-side="back">裏</div>'
+          + '</div>';
+      }
+      container.innerHTML = html;
+      container.querySelector('.cardimg-thumb').onclick = function(){ openCardImageModal(id, side); };
+      if(hasBack){
+        Array.prototype.forEach.call(container.querySelectorAll('.cardimg-sides .chip'), function(chip){
+          chip.onclick = function(){
+            var s = chip.getAttribute('data-side');
+            if(s===side) return;
+            side = s;
+            switchSide();
+          };
+        });
+      }
+    }
+    function switchSide(){
+      fetchCardImage(id, side, 'thumb').then(function(data){
+        if(data && data.image) render(data);
+      });
+    }
+    render(frontData);
+  }
+
+  // 拡大モーダル（#modalRoot に描画。黒背景・中央表示・ピンチ拡大＋パン・ダブルタップで1x/2x・Esc/背景タップで閉じる）
+  function openCardImageModal(id, initialSide){
+    var root = EL('modalRoot');
+    root.innerHTML = '<div class="imgviewbg" id="imgViewBg">'
+      + '<button type="button" class="imgviewclose" id="imgViewClose" aria-label="閉じる">×</button>'
+      + '<div class="imgviewstage" id="imgViewStage"><div class="imgviewloading">読み込み中…</div></div>'
+      + '</div>';
+    var bg = document.getElementById('imgViewBg');
+    var stage = document.getElementById('imgViewStage');
+    function onKey(e){ if(e.key==='Escape') close(); }
+    function close(){
+      document.removeEventListener('keydown', onKey);
+      if(root.querySelector('#imgViewBg')===bg){ root.innerHTML=''; }
+    }
+    document.addEventListener('keydown', onKey);
+    document.getElementById('imgViewClose').onclick = close;
+    bg.addEventListener('click', function(e){ if(e.target===bg || e.target===stage){ close(); } });
+
+    function loadSide(s){
+      stage.innerHTML = '<div class="imgviewloading">読み込み中…</div>';
+      fetchCardImage(id, s, 'full').then(function(data){
+        if(!data || !data.image){ stage.innerHTML='<div class="imgviewloading">画像を取得できませんでした</div>'; return; }
+        stage.innerHTML = '<img id="imgViewImg" src="data:'+esc(data.mime||'image/jpeg')+';base64,'+data.image+'" alt="名刺画像">';
+        bindPinchZoom(document.getElementById('imgViewImg'));
+      }).catch(function(){
+        stage.innerHTML = '<div class="imgviewloading">画像を取得できませんでした</div>';
+      });
+    }
+    loadSide(initialSide || 'front');
+  }
+  // 2本指ピンチで拡大、1本指パン、ダブルタップ（ダブルクリック）で1x/2x切替
+  function bindPinchZoom(img){
+    var scale=1, panX=0, panY=0;
+    var startDist=0, startScale=1, startPanX=0, startPanY=0;
+    var lastTapTime=0, lastTapX=0, lastTapY=0, moved=false;
+    function apply(){ img.style.transform = 'translate('+panX+'px,'+panY+'px) scale('+scale+')'; }
+    function dist(t1,t2){ var dx=t1.clientX-t2.clientX, dy=t1.clientY-t2.clientY; return Math.sqrt(dx*dx+dy*dy); }
+    function clampPan(){
+      var maxPan = 300*Math.max(scale-1,0) + 20;
+      panX = Math.max(-maxPan, Math.min(maxPan, panX));
+      panY = Math.max(-maxPan, Math.min(maxPan, panY));
+    }
+    function reset(){ scale=1; panX=0; panY=0; apply(); }
+    function toggleZoom(){ scale = scale>1 ? 1 : 2; panX=0; panY=0; apply(); }
+    img.addEventListener('touchstart', function(e){
+      moved=false;
+      if(e.touches.length===2){
+        e.preventDefault();
+        startDist = dist(e.touches[0], e.touches[1]);
+        startScale = scale; startPanX = panX; startPanY = panY;
+      } else if(e.touches.length===1){
+        startPanX = panX - e.touches[0].clientX;
+        startPanY = panY - e.touches[0].clientY;
+      }
+    }, {passive:false});
+    img.addEventListener('touchmove', function(e){
+      if(e.touches.length===2){
+        e.preventDefault(); moved=true;
+        var d = dist(e.touches[0], e.touches[1]);
+        scale = Math.max(1, Math.min(4, startScale*(d/startDist)));
+        clampPan(); apply();
+      } else if(e.touches.length===1 && scale>1){
+        e.preventDefault(); moved=true;
+        panX = startPanX + e.touches[0].clientX;
+        panY = startPanY + e.touches[0].clientY;
+        clampPan(); apply();
+      }
+    }, {passive:false});
+    img.addEventListener('touchend', function(e){
+      if(e.touches.length>0) return;
+      if(!moved){
+        var now = Date.now();
+        var t = e.changedTouches && e.changedTouches[0];
+        var x = t?t.clientX:0, y = t?t.clientY:0;
+        if(now-lastTapTime<320 && Math.abs(x-lastTapX)<30 && Math.abs(y-lastTapY)<30){
+          toggleZoom(); lastTapTime=0;
+        } else { lastTapTime=now; lastTapX=x; lastTapY=y; }
+      }
+      if(scale<=1){ panX=0; panY=0; apply(); }
+    }, {passive:false});
+    // デスクトップ（マウス操作）でのダブルタップ相当
+    img.addEventListener('dblclick', function(){ toggleZoom(); });
+    apply();
+  }
 
   // ---- ログイン ----
   EL('loginBtn').onclick = doLogin;
@@ -1080,6 +1264,7 @@
       EL('reviewHead').textContent='';
       EL('reviewPersonHead').innerHTML='';
       EL('reviewFormBox').innerHTML='<div class="empty"><b>対象がありません</b>新着名刺画面から開始してください。</div>';
+      EL('reviewImageBox').innerHTML='';
       EL('reviewContactBox').innerHTML='';
       EL('reviewNav').innerHTML='<button type="button" id="reviewBackToNew">新着画面へ</button>';
       document.getElementById('reviewBackToNew').onclick = function(){ location.hash='#new'; };
@@ -1092,10 +1277,15 @@
     var item = reviewState.list[reviewState.index];
     EL('reviewHead').textContent = '新着名刺 '+reviewState.list.length+'件　'+(reviewState.index+1)+' / '+reviewState.list.length;
     EL('reviewFormBox').innerHTML = '<div class="spin">読み込み中…</div>';
+    EL('reviewImageBox').innerHTML='';
     EL('reviewContactBox').innerHTML='';
     api('person', { id:item.id }).then(function(r){
       if(!r || !r.ok){ if(r&&r.error==='auth'){doLogout();return;} EL('reviewFormBox').innerHTML='<div class="empty"><b>エラー</b></div>'; return; }
       renderReviewPerson(item.id, r.data);
+      renderCardImageBox(EL('reviewImageBox'), item.id);
+      // 次の1人のサムネを先読み（キャッシュに載せるだけ。表示はしない）
+      var nextItem = reviewState.list[reviewState.index+1];
+      if(nextItem){ fetchCardImage(nextItem.id, 'front', 'thumb').catch(function(){}); }
     });
   }
   function markLocalOrganized(id, val){
@@ -1151,6 +1341,7 @@
   function renderReviewDone(){
     EL('reviewHead').textContent='';
     EL('reviewPersonHead').innerHTML='';
+    EL('reviewImageBox').innerHTML='';
     var remaining = reviewState.list.filter(function(p){ return !p.organized; }).length;
     EL('reviewFormBox').innerHTML = '<div class="donebox"><b>整理完了。未整理 '+remaining+'件</b></div>';
     EL('reviewContactBox').innerHTML='';
@@ -1164,6 +1355,7 @@
     CURRENT_PERSON_ID = id;
     EL('personHead').innerHTML='';
     EL('personInfo').innerHTML='<div class="spin">読み込み中…</div>';
+    EL('personImageBox').innerHTML='';
     EL('personActs').innerHTML='';
     EL('personExchangeBlock').innerHTML='';
     EL('personHistBlock').innerHTML='';
@@ -1257,6 +1449,8 @@
         loadPerson(id);
       });
     };
+    // 人物情報の描画完了後に名刺画像サムネを非同期表示
+    renderCardImageBox(EL('personImageBox'), id);
   }
   EL('personAddContactBtn').onclick = function(){
     if(!CURRENT_PERSON_ID) return;
@@ -1404,6 +1598,8 @@
       sns:{ facebookUrl:'', instagramUrl:'', linkedinUrl:'https://linkedin.com/in/misaki-takahashi', xUrl:'', youtubeUrl:'', otherSnsUrl:'', snsCheckedAt:'2026-09-08 11:00:00' },
       histories:[ { contactDate:'2026-09-05', eventName:'守成 青山デイライト', contactType:'名刺交換', memo:'', followUp:true, followDate:'2026-09-15', createdAt:'2026-09-08 09:00:00', label:'守成 青山デイライト 260905' } ] }
   ]};
+  // モック用の極小PNG（1x1px）。cardImage の image データとして使い回す
+  var MOCK_CARD_IMAGE_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   function findMockPerson(id){
     var found=null;
     MOCK_DB.persons.forEach(function(p){ if(p.card.id===id) found=p; });
@@ -1585,6 +1781,17 @@
       var pr = findMockPerson(body.id); if(!pr) return {ok:false, error:'not_found'};
       pr.sns[body.platform+'Url'] = '';
       return {ok:true, data:{ id:pr.card.id, platform:body.platform }};
+    }
+    if(action==='cardImage'){
+      var pim = findMockPerson(body.contactId); if(!pim) return {ok:false, error:'not_found'};
+      var digits = String(body.contactId||'').replace(/\D/g,'');
+      var lastDigit = digits.slice(-1);
+      var isEven = digits!=='' && (parseInt(lastDigit,10)%2)===0;
+      if(!isEven) return {ok:true, data:{ image:null, mime:'image/png', hasFront:false, hasBack:false }};
+      var hasBack = lastDigit==='2';
+      var side = body.side==='back' ? 'back' : 'front';
+      if(side==='back' && !hasBack) return {ok:true, data:{ image:null, mime:'image/png', hasFront:true, hasBack:false }};
+      return {ok:true, data:{ image: MOCK_CARD_IMAGE_B64, mime:'image/png', hasFront:true, hasBack:hasBack }};
     }
     return {ok:false, error:'unknown_action'};
   }
