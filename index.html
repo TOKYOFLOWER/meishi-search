@@ -800,11 +800,17 @@
   // GAS呼び出しを待たずに即アプリを開く(一覧はIndexedDBキャッシュがあれば即描画)。
   // 認証が実際には無効だった場合は、後続の各GAS呼び出し(listDelta/bootstrap等)がAUTHエラーを
   // 返した時点でdoLogout()によりログイン画面へ戻す。
-  // setTimeout(...,0)で遅延: enterApp()はinitEightList()等、末尾のscriptブロックで定義される
+  // DOMContentLoadedまで遅延: enterApp()はinitEightList()等、末尾のscriptブロックで定義される
   // 関数を呼ぶため、このscriptブロックの同期実行中(＝まだ後続scriptが読み込まれる前)に直接
-  // 呼ぶとReferenceErrorになる。マクロタスクに回すことでページ全体の読み込み後に実行させる。
+  // 呼ぶとReferenceErrorになる。setTimeout(fn,0)は実運用(ネットワーク経由の配信でHTMLパーサーが
+  // チャンク境界でyieldする場合)ではタイマーがscriptタグの合間に割り込むことがあり不十分だった
+  // (実機で確認)。DOMContentLoadedは仕様上、全ての同期scriptの実行完了後にのみ発火するため確実。
   if(getToken() || getCreds()){
-    setTimeout(enterApp, 0);
+    if(document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', enterApp);
+    } else {
+      enterApp();
+    }
   }
 
   // 一覧描画は待たずにアプリを表示し、上部カード・タグ・イベント名・詳細検索フィルタ(bootstrap)は
