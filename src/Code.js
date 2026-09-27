@@ -1999,3 +1999,14 @@ function roleLevel_(t) {
   if (t.trim() === '') return '不明';
   return '担当';
 }
+
+/* ==================================================================
+ *  一時関数: Eight風UI改修前のスプレッドシート丸ごとバックアップ
+ *  GASエディタで backupSheet_ を選択して手動実行する。完了後は削除してよい。
+ * ================================================================== */
+function backupSheet_() {
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+  var copy = DriveApp.getFileById(SPREADSHEET_ID).makeCopy('名刺DB_backup_' + stamp);
+  Logger.log('バックアップ作成: ' + copy.getName() + ' (' + copy.getId() + ')');
+  return copy.getId();
+}

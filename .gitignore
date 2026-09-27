@@ -8,6 +8,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# === Claude Code ローカル設定 ===
+.claude/settings.local.json
+
 # === 名刺取込(ingest) ― 秘密情報・状態・スキャン画像 ===
 ingest/.env
 ingest/state.json
