@@ -55,7 +55,6 @@ var DEVICES_SHEET = 'devices';
 var DEVICES_HEADER = ['token_hash', 'device_label', 'created_at', 'last_seen', 'revoked'];
 var TOKEN_TTL_DAYS = 180; // last_seenからの有効期限（延長あり）
 var AUTH_CACHE_SEC = 600; // トークン検証OKの結果を10分キャッシュ（last_seen書き込み頻度を抑える）
-var LIST_LITE_CACHE_SEC = 300; // listLite/listDelta の結果を5分キャッシュ
 var THUMB_MAX_IDS = 30; // getThumbs 1回あたりの最大件数
 
 var SS_CACHE_ = null;
@@ -347,6 +346,19 @@ function formatContactLabel_(eventName, iso) {
 // 名刺交換日等、Dateまたは文字列を 'yyyy-MM-dd'(Dateの場合) / そのまま(文字列の場合) で返す表示用整形
 function pickExchanged_(v) {
   if (v instanceof Date) return Utilities.formatDate(v, 'JST', 'yyyy-MM-dd');
+  return v == null ? '' : String(v);
+}
+// pickExchanged_と同じ結果を返すが、Utilities.formatDate(GAS API境界を跨ぐ呼び出し)を使わない高速版。
+// JSTはUTC+9固定(夏時間なし)なので +9h してUTC系メソッドで取り出せば正確に一致する。
+// listLiteのように数千行をmapする箇所で使う(1行ごとのAPI呼び出しコストが積み上がるため)。
+function pickExchangedFast_(v) {
+  if (v instanceof Date) {
+    var t = v.getTime();
+    if (isNaN(t)) return '';
+    var jst = new Date(t + 9 * 3600000);
+    var y = jst.getUTCFullYear(), m = jst.getUTCMonth() + 1, day = jst.getUTCDate();
+    return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+  }
   return v == null ? '' : String(v);
 }
 function isTrue_(v) {
@@ -1487,6 +1499,7 @@ function bootCacheKeysAll_() {
 // 書き込み系 action の末尾で呼ぶ（整理直後に古い件数・一覧が出ないように）
 function invalidateBootstrapCache_() {
   try { CacheService.getScriptCache().removeAll(bootCacheKeysAll_()); } catch (e) { /* noop */ }
+  bumpListVersion_();
 }
 function bootCacheGet_(key) {
   try {
@@ -1547,32 +1560,37 @@ function bootstrap_(input) {
 /* ==================================================================
  *  Eight風UI: 軽量リスト（listLite / listDelta）＋ サムネ配信（getThumbs / setThumb）
  * ================================================================== */
-// version = スプレッドシート自体の最終更新時刻(ms)。セル編集があれば変わるため、
-// listLite/listDelta のキャッシュキー・差分判定にそのまま使える。
+// version = PropertiesServiceで管理する単調増加カウンタ(ミリ秒タイムスタンプ)。
+// DriveApp.getLastUpdated()は別サービス呼び出しで数秒かかることがあるため使わない。
+// 名刺DBを書き換えるactionは全てinvalidateBootstrapCache_()経由でbumpListVersion_()を呼ぶ。
+var LIST_VERSION_PROP = 'LIST_VERSION';
 function listLiteVersion_() {
-  return String(DriveApp.getFileById(SPREADSHEET_ID).getLastUpdated().getTime());
+  var p = PropertiesService.getScriptProperties();
+  var v = p.getProperty(LIST_VERSION_PROP);
+  if (!v) { v = String(Date.now()); p.setProperty(LIST_VERSION_PROP, v); }
+  return v;
 }
+function bumpListVersion_() {
+  try { PropertiesService.getScriptProperties().setProperty(LIST_VERSION_PROP, String(Date.now())); } catch (e) { /* noop */ }
+}
+// キー名は短縮(id/n/c/t/d/th)。3,862件で内訳キー分の無駄な冗長性を減らすため。フロント側で展開する。
 function buildListLite_() {
   var d = readCards_(['id', '氏名', '会社名', '役職', '名刺交換日', THUMB_COL]), c = colIndex_(d.header);
   return d.rows.map(function (r) {
     return {
       id: String(r[c['id']] || ''),
-      name: String(r[c['氏名']] || ''),
-      company: String(r[c['会社名']] || ''),
-      title: String(r[c['役職']] || ''),
-      exchangedAt: pickExchanged_(r[c['名刺交換日']]),
-      thumbFileId: c[THUMB_COL] !== undefined ? String(r[c[THUMB_COL]] || '') : ''
+      n: String(r[c['氏名']] || ''),
+      c: String(r[c['会社名']] || ''),
+      t: String(r[c['役職']] || ''),
+      d: pickExchangedFast_(r[c['名刺交換日']]),
+      th: c[THUMB_COL] !== undefined ? String(r[c[THUMB_COL]] || '') : ''
     };
   });
 }
+// 3,862件だと数百KBになりCacheServiceの1値100KB上限に収まらない(gzipしても収まらないことが多い)ため、
+// 無駄なgzip試行で実行時間を浪費しないようキャッシュはせず毎回シートから組み立てる。
 function listLiteData_() {
-  var version = listLiteVersion_();
-  var cacheKey = 'listlite:v1:' + version;
-  var cached = bootCacheGet_(cacheKey);
-  if (cached) return { items: cached, version: version };
-  var items = buildListLite_();
-  bootCachePut_(cacheKey, items, LIST_LITE_CACHE_SEC);
-  return { items: items, version: version };
+  return { items: buildListLite_(), version: listLiteVersion_() };
 }
 function listLite_(body) {
   var d = listLiteData_();

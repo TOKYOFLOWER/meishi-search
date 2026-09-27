@@ -781,56 +781,58 @@
     EL('loginBtn').disabled = true; EL('loginErr').textContent = '確認中…';
     setCreds({ user:user, pass:pass });
     try {
-      // 1) user/passでログイン→端末トークンを発行(以降の呼び出しはtoken優先になる)。
-      //    GAS側がまだloginに未対応(旧デプロイ・unknown_action)の場合はトークン無しで従来方式にフォールバックする
+      // user/passでログイン→端末トークンを発行。login自体がauthAny_でuser/pass検証を兼ねるため、
+      // ここでbootstrapを待たずにアプリを開ける(一覧描画をブロックしないため意図的にbootstrapは呼ばない)。
+      // GAS側がまだloginに未対応(旧デプロイ・unknown_action)でも、認証ゲートは通過済みなので継続してよい。
       var lr = await api('login', { deviceLabel: (navigator.userAgent||'').slice(0,60) }, { busyMessage:'確認中…' });
       if(lr && lr.ok && lr.data && lr.data.token){ setToken(lr.data.token); }
-      var r = await api('bootstrap', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }, { busyMessage:'読み込み中…' });
-      if(r && r.ok){ EL('loginErr').textContent=''; await enterApp(r.data); }
-      else { clearToken(); clearCreds(); EL('loginErr').textContent='IDまたはパスワードが違います'; }
+      else if(lr && lr.error === 'auth'){
+        clearCreds(); EL('loginErr').textContent='IDまたはパスワードが違います'; return;
+      } else if(!lr){ throw new Error('network'); }
+      EL('loginErr').textContent='';
+      enterApp();
     } catch(e){
       clearToken(); clearCreds(); EL('loginErr').textContent='接続に失敗しました（URL設定/通信をご確認ください）';
     } finally { EL('loginBtn').disabled = false; }
   }
 
-  // 自動ログイン: msToken(localStorage、端末に永続)があればログイン画面を出さず即アプリへ。
-  // 無い/失効時のみ、旧方式(セッションのuser/pass)にフォールバックし、それも無ければログイン画面。
-  (async function(){
-    if(getToken() || getCreds()){
-      try {
-        var r = await api('bootstrap', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }, { busyMessage:'読み込み中…' });
-        if(r && r.ok){ await enterApp(r.data); return; }
-      } catch(e){}
-      clearToken(); clearCreds();
-    }
-  })();
+  // 自動ログイン: msToken(localStorage、端末に永続)またはセッションのuser/passがあれば、
+  // GAS呼び出しを待たずに即アプリを開く(一覧はIndexedDBキャッシュがあれば即描画)。
+  // 認証が実際には無効だった場合は、後続の各GAS呼び出し(listDelta/bootstrap等)がAUTHエラーを
+  // 返した時点でdoLogout()によりログイン画面へ戻す。
+  if(getToken() || getCreds()){
+    enterApp();
+  }
 
-  // boot: bootstrap のレスポンス data（{filters,eventNames,tags,stats,newCards,...}）。
-  // 旧経路など boot が無い場合は従来どおり個別取得する。
-  async function enterApp(boot){
+  // 一覧描画は待たずにアプリを表示し、上部カード・タグ・イベント名・詳細検索フィルタ(bootstrap)は
+  // loadBootData()で非同期に取得する。
+  function enterApp(){
     EL('login').style.display='none';
     EL('app').style.display='block';
-    if(boot){
-      initFilters(boot.filters);
-      EVENT_NAMES = (boot.eventNames && boot.eventNames.items) || [];
-      renderEventDatalist(); renderEvChips();
-      mergeTagCandidates(boot.tags && boot.tags.items);
-      applyStats(boot.stats);
-      STATS_FRESH = true;
-      if(boot.newCards){ BOOT_NEWCARDS = boot.newCards; }
-    } else {
-      var f = await api('filters');
-      if(!f || !f.ok){ doLogout(); return; }
-      initFilters(f.data);
-      await loadEventNames();
-      loadTagCandidates();
-      loadStats();
-    }
     EL('list').onclick = handleListClick;
-    initEightList(); // Eight風一覧(キャッシュ即表示→listDelta)。既存bootstrapの経路とは独立に並行して読み込む
+    initEightList(); // Eight風一覧(キャッシュ即表示→listDelta)。bootstrapを待たない
+    STATS_FRESH = true; // 直後のroute()のホーム初回描画でloadStats()が二重に走らないよう抑制(loadBootDataが本来の値を反映)
     // hashが未設定ならhashchange経由でroute()が呼ばれる。既にhashがある場合のみここで明示的に呼ぶ
     // （両方で呼ぶとroute()が二重実行され、loadStats等が二重に走ってしまうため）
     if(!location.hash){ location.hash = '#home'; } else { route(); }
+    loadBootData();
+  }
+
+  // bootstrap(上部3カード・タグ候補・イベント名・詳細検索フィルタ)を一覧描画後に非同期取得。
+  // 失敗しても一覧・検索・詳細画面は使えるので、認証エラー以外は握りつぶす。
+  async function loadBootData(){
+    try {
+      var r = await api('bootstrap', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }, { silent:true });
+      if(r && r.ok && r.data){
+        var boot = r.data;
+        initFilters(boot.filters);
+        EVENT_NAMES = (boot.eventNames && boot.eventNames.items) || [];
+        renderEventDatalist(); renderEvChips();
+        mergeTagCandidates(boot.tags && boot.tags.items);
+        applyStats(boot.stats);
+        if(boot.newCards){ BOOT_NEWCARDS = boot.newCards; }
+      } else if(r && r.error==='auth'){ doLogout(); }
+    } catch(e){ /* 上部カード等が更新されないだけなので握りつぶす */ }
   }
 
   window.addEventListener('hashchange', route);
@@ -1426,7 +1428,11 @@
   // ==================== 人物詳細 ====================
   function initPersonView(id){
     CURRENT_PERSON_ID = id;
-    EL('personHead').innerHTML='';
+    // 一覧キャッシュ(eightAllItems、メモリ上)にあれば氏名・会社・肩書をGAS呼び出し無しで即表示
+    var cachedItem = (typeof eightAllItems !== 'undefined' ? eightAllItems : []).filter(function(it){ return it.id === id; })[0];
+    EL('personHead').innerHTML = cachedItem
+      ? '<div class="name3">'+esc(cachedItem.name||'(氏名不明)')+'</div><div class="sub3">'+esc([cachedItem.company, cachedItem.title].filter(Boolean).join(' / '))+'</div>'
+      : '';
     EL('personInfo').innerHTML='<div class="spin">読み込み中…</div>';
     EL('personImageBox').innerHTML='';
     EL('personActs').innerHTML='';
@@ -1870,9 +1876,10 @@
     if(action==='login'){ return {ok:true, data:{ token:'mock-token-'+Date.now() }}; }
     if(action==='logout'){ return {ok:true}; }
     if(action==='listLite' || action==='listDelta'){
+      // 実サーバーと同じ短縮キー({id,n,c,t,d,th})で返す(フロント側のexpandListItems_で展開される)
       var mockItems = MOCK_DB.persons.map(function(p){
-        return { id:p.card.id, name:p.card.name, company:p.card.company, title:p.card.title,
-                 exchangedAt:p.card.exchanged||'', thumbFileId:'' };
+        return { id:p.card.id, n:p.card.name, c:p.card.company, t:p.card.title,
+                 d:p.card.exchanged||'', th:'' };
       });
       var mockVersion = 'mock-1';
       if(action==='listDelta' && body.sinceVersion===mockVersion) return {ok:true, data:{ changed:false, version:mockVersion }};
@@ -1930,6 +1937,13 @@
     }).catch(function(){});
   }
 
+  // listLite/listDelta は転送量削減のため短縮キー({id,n,c,t,d,th})で返る。ここで展開してから使う。
+  function expandListItems_(arr){
+    return (arr || []).map(function(it){
+      return { id: it.id, name: it.n, company: it.c, title: it.t, exchangedAt: it.d, thumbFileId: it.th };
+    });
+  }
+
   // カタカナ→ひらがな正規化＋小文字化＋空白除去（ひらがな/カタカナを同一視した部分一致用）
   function eightNormalize(s){
     s = String(s||'');
@@ -1943,7 +1957,7 @@
   var eightKeyword = '';
   var eightRenderList = [];    // ソート・絞込・グルーピング後の描画対象（{type:'header'|'item', ...}）
   var eightRenderedCount = 0;
-  var EIGHT_PAGE_SIZE = 200;
+  var EIGHT_PAGE_SIZE = 100;
   var eightRowObserver = null;      // 行の可視監視（サムネ遅延取得トリガ）
   var eightSentinelObserver = null; // 末尾の追加描画トリガ
   var eightThumbQueue = [];
@@ -2140,7 +2154,7 @@
       try {
         var d = await api('listDelta', { sinceVersion: eightVersion }, { silent:true });
         if(d && d.ok && d.data && d.data.changed){
-          eightAllItems = d.data.items; eightVersion = d.data.version;
+          eightAllItems = expandListItems_(d.data.items); eightVersion = d.data.version;
           idbSet('list', IDB_LIST_KEY, { version:eightVersion, items:eightAllItems }).catch(function(){});
           eightRebuild();
         } else if(d && d.error==='auth'){ doLogout(); }
@@ -2151,7 +2165,7 @@
     try {
       var r = await api('listLite', {}, { busyMessage:'一覧を取得中…' });
       if(r && r.ok && r.data){
-        eightAllItems = r.data.items||[]; eightVersion = r.data.version;
+        eightAllItems = expandListItems_(r.data.items); eightVersion = r.data.version;
         idbSet('list', IDB_LIST_KEY, { version:eightVersion, items:eightAllItems }).catch(function(){});
         eightRebuild();
         eightSetHeaderVars();
