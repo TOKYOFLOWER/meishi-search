@@ -2228,7 +2228,8 @@ function roleLevel_(t) {
 
 /* ==================================================================
  *  一時関数: Eight風UI改修前のスプレッドシート丸ごとバックアップ
- *  GASエディタで backupSheet_ を選択して手動実行する。完了後は削除してよい。
+ *  GASエディタで runBackupSheet を選択して手動実行する。完了後は両方削除してよい。
+ *  （backupSheet_は末尾_のためprivate扱いとなりエディタの実行ドロップダウンに出ない）
  * ================================================================== */
 function backupSheet_() {
   var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
@@ -2236,3 +2237,4 @@ function backupSheet_() {
   Logger.log('バックアップ作成: ' + copy.getName() + ' (' + copy.getId() + ')');
   return copy.getId();
 }
+function runBackupSheet() { return backupSheet_(); }
