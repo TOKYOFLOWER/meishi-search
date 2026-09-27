@@ -111,6 +111,37 @@
   .daterow input{flex:1; padding:9px 10px; font-size:13.5px; border:1px solid var(--line);
                  border-radius:10px; background:var(--paper);}
 
+  /* --- Eight風 一覧UI（名刺一覧の高速表示・キャッシュ表示） --- */
+  .eightbar{position:sticky; top:var(--headerH,52px); z-index:9; background:#fff;
+            border-bottom:1px solid var(--line); padding:10px 16px; display:flex; gap:8px;}
+  .eightsearch{flex:1; min-width:0; padding:11px 14px; font-size:15px; border:1px solid var(--line);
+               border-radius:12px; background:var(--paper); outline:none;}
+  .eightsearch:focus{border-color:var(--ink);}
+  .eighttagbtn{white-space:nowrap; padding:0 14px; border:1px solid var(--line); border-radius:12px;
+               background:#fff; color:var(--ink); font-size:13px;}
+  .eightsort{display:flex; gap:8px; padding:10px 16px; background:#fff; border-bottom:1px solid var(--line);}
+  .eightsortbtn{flex:1; padding:8px; font-size:12.5px; border:1px solid var(--line); border-radius:10px;
+                background:var(--paper); color:var(--muted);}
+  .eightsortbtn.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .eightlist{padding:0 0 40px; background:#fff;}
+  .emonth{position:sticky; top:calc(var(--headerH,52px) + var(--eightbarH,90px)); z-index:8;
+          background:var(--paper); color:var(--muted); font-size:12px; font-weight:700;
+          padding:7px 16px; border-bottom:1px solid var(--line);}
+  .erow{display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--line);
+        cursor:pointer;}
+  .erow:active{background:var(--paper);}
+  .erow .ebody{flex:1; min-width:0;}
+  .ename{font-size:17px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .ecompany{font-size:13px; color:var(--text); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .etitle{font-size:12px; color:var(--muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .ethumb{flex:none; width:100px; height:60.44px; border-radius:4px; background:#e7e2d6; overflow:hidden;}
+  .ethumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .eightempty{padding:44px 24px; text-align:center; color:var(--muted); font-size:13px;}
+  .eightspin{padding:30px; text-align:center; color:var(--muted); font-size:13px;}
+  .eightsentinel{height:1px;}
+  .eighttaglist{display:flex; flex-wrap:wrap; gap:8px; margin-top:4px;}
+  .eighttaglist .chip{cursor:pointer;}
+
   /* --- 新着名刺 --- */
   .newbar{padding:12px 16px; background:#fff; border-bottom:1px solid var(--line);}
   .togglerow{display:flex; align-items:center; gap:8px; margin-top:10px; font-size:13px; color:var(--muted);}
@@ -303,6 +334,20 @@
       <div class="entry" id="entryUnorg"><b>–</b><span>未整理</span></div>
       <div class="entry" id="entryFollow"><b>–</b><span>要フォロー</span></div>
     </div>
+
+    <!-- Eight風 一覧UI: 全件をキャッシュから即表示し、検索バー・並び替えで絞り込む -->
+    <div class="eightbar">
+      <input id="eightSearch" class="eightsearch" type="search" placeholder="人・会社を探す" enterkeyhint="search">
+      <button type="button" id="eightTagBtn" class="eighttagbtn">タグ検索</button>
+    </div>
+    <div class="eightsort">
+      <button type="button" class="eightsortbtn on" data-sort="exchangedAt">交換日順</button>
+      <button type="button" class="eightsortbtn" data-sort="name">所有している名刺</button>
+    </div>
+    <div class="eightlist" id="eightList"><div class="eightspin">読み込み中…</div></div>
+    <div class="eightsentinel" id="eightSentinel"></div>
+
+    <div class="heading">詳細検索</div>
     <div class="panel">
       <input id="kw" class="kw" type="search" placeholder="会社名・氏名・住所で検索" enterkeyhint="search">
       <div class="selrow">
@@ -464,7 +509,20 @@
   }
   function setCreds(c){ sessionStorage.setItem('meishi_creds', JSON.stringify(c)); }
   function clearCreds(){ sessionStorage.removeItem('meishi_creds'); }
-  function doLogout(){ clearCreds(); clearImageCache(); location.reload(); }
+
+  // ---- 端末トークン（永続ログイン。localStorageなのでブラウザ再起動後も残る） ----
+  function getToken(){ try { return localStorage.getItem('msToken') || ''; } catch(e){ return ''; } }
+  function setToken(t){ try { localStorage.setItem('msToken', t); } catch(e){} }
+  function clearToken(){ try { localStorage.removeItem('msToken'); } catch(e){} }
+
+  function doLogout(){
+    var token = getToken();
+    clearToken(); clearCreds(); clearImageCache();
+    var finish = function(){ idbClearAll().catch(function(){}).then(function(){ location.reload(); }); };
+    if(token && !MOCK){
+      api('logout', { token:token }, { silent:true }).catch(function(){}).then(finish);
+    } else { finish(); }
+  }
 
   function getSession(){
     try { return JSON.parse(sessionStorage.getItem('meishi_session')||'{}'); } catch(e){ return {}; }
@@ -520,14 +578,23 @@
     if(!silent){ showBusy((opts && opts.busyMessage) || busyMessageFor(action)); }
     try {
       if(MOCK){ return await mockApi(action, extra||{}); }
-      var creds = getCreds() || {};
-      var body = Object.assign({ action:action, user:creds.user, pass:creds.pass }, extra||{});
+      var token = (extra && extra.token) || getToken();
+      var body;
+      if(token){
+        body = Object.assign({ action:action, token:token }, extra||{});
+      } else {
+        var creds = getCreds() || {};
+        body = Object.assign({ action:action, user:creds.user, pass:creds.pass }, extra||{});
+      }
       var res = await fetch(GAS_URL, {
         method:'POST',
         headers:{'Content-Type':'text/plain;charset=utf-8'},
         body: JSON.stringify(body)
       });
-      return await res.json();
+      var json = await res.json();
+      // token失効時は既存の 'auth' ハンドリング(各呼び出し元のdoLogout)に相乗りさせる
+      if(json && json.error === 'AUTH'){ clearToken(); json.error = 'auth'; }
+      return json;
     } finally {
       if(!silent){ hideBusy(); }
     }
@@ -714,22 +781,27 @@
     EL('loginBtn').disabled = true; EL('loginErr').textContent = '確認中…';
     setCreds({ user:user, pass:pass });
     try {
+      // 1) user/passでログイン→端末トークンを発行(以降の呼び出しはtoken優先になる)。
+      //    GAS側がまだloginに未対応(旧デプロイ・unknown_action)の場合はトークン無しで従来方式にフォールバックする
+      var lr = await api('login', { deviceLabel: (navigator.userAgent||'').slice(0,60) }, { busyMessage:'確認中…' });
+      if(lr && lr.ok && lr.data && lr.data.token){ setToken(lr.data.token); }
       var r = await api('bootstrap', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }, { busyMessage:'読み込み中…' });
       if(r && r.ok){ EL('loginErr').textContent=''; await enterApp(r.data); }
-      else { clearCreds(); EL('loginErr').textContent='IDまたはパスワードが違います'; }
+      else { clearToken(); clearCreds(); EL('loginErr').textContent='IDまたはパスワードが違います'; }
     } catch(e){
-      clearCreds(); EL('loginErr').textContent='接続に失敗しました（URL設定/通信をご確認ください）';
+      clearToken(); clearCreds(); EL('loginErr').textContent='接続に失敗しました（URL設定/通信をご確認ください）';
     } finally { EL('loginBtn').disabled = false; }
   }
 
-  // 自動ログイン(セッションに資格情報があれば)
+  // 自動ログイン: msToken(localStorage、端末に永続)があればログイン画面を出さず即アプリへ。
+  // 無い/失効時のみ、旧方式(セッションのuser/pass)にフォールバックし、それも無ければログイン画面。
   (async function(){
-    if(getCreds()){
+    if(getToken() || getCreds()){
       try {
         var r = await api('bootstrap', { days:newState.days, onlyUnorganized:newState.onlyUnorganized }, { busyMessage:'読み込み中…' });
         if(r && r.ok){ await enterApp(r.data); return; }
       } catch(e){}
-      clearCreds();
+      clearToken(); clearCreds();
     }
   })();
 
@@ -755,6 +827,7 @@
       loadStats();
     }
     EL('list').onclick = handleListClick;
+    initEightList(); // Eight風一覧(キャッシュ即表示→listDelta)。既存bootstrapの経路とは独立に並行して読み込む
     // hashが未設定ならhashchange経由でroute()が呼ばれる。既にhashがある場合のみここで明示的に呼ぶ
     // （両方で呼ぶとroute()が二重実行され、loadStats等が二重に走ってしまうため）
     if(!location.hash){ location.hash = '#home'; } else { route(); }
@@ -1793,7 +1866,300 @@
       if(side==='back' && !hasBack) return {ok:true, data:{ image:null, mime:'image/png', hasFront:true, hasBack:false }};
       return {ok:true, data:{ image: MOCK_CARD_IMAGE_B64, mime:'image/png', hasFront:true, hasBack:hasBack }};
     }
+    // ---- Eight風UI（デバイストークン・軽量リスト）のモック ----
+    if(action==='login'){ return {ok:true, data:{ token:'mock-token-'+Date.now() }}; }
+    if(action==='logout'){ return {ok:true}; }
+    if(action==='listLite' || action==='listDelta'){
+      var mockItems = MOCK_DB.persons.map(function(p){
+        return { id:p.card.id, name:p.card.name, company:p.card.company, title:p.card.title,
+                 exchangedAt:p.card.exchanged||'', thumbFileId:'' };
+      });
+      var mockVersion = 'mock-1';
+      if(action==='listDelta' && body.sinceVersion===mockVersion) return {ok:true, data:{ changed:false, version:mockVersion }};
+      return {ok:true, data:{ changed:true, items:mockItems, version:mockVersion }};
+    }
+    if(action==='getThumbs'){ return {ok:true, data:{}}; } // モックはサムネ無し(プレースホルダーのまま)
     return {ok:false, error:'unknown_action'};
+  }
+</script>
+<script>
+  // ==================== Eight風 一覧UI（IndexedDBキャッシュ＋listLite/listDelta/getThumbs） ====================
+  var IDB_NAME = 'meishi', IDB_VERSION = 1, IDB_LIST_KEY = 'v1';
+  function idbOpen(){
+    return new Promise(function(resolve, reject){
+      if(!('indexedDB' in window)){ reject(new Error('no_indexeddb')); return; }
+      var req = indexedDB.open(IDB_NAME, IDB_VERSION);
+      req.onupgradeneeded = function(){
+        var db = req.result;
+        if(!db.objectStoreNames.contains('list')) db.createObjectStore('list');
+        if(!db.objectStoreNames.contains('thumbs')) db.createObjectStore('thumbs');
+      };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ reject(req.error); };
+    });
+  }
+  function idbGet(storeName, key){
+    return idbOpen().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(storeName, 'readonly');
+        var req = tx.objectStore(storeName).get(key);
+        req.onsuccess = function(){ resolve(req.result); };
+        req.onerror = function(){ reject(req.error); };
+      });
+    });
+  }
+  function idbSet(storeName, key, value){
+    return idbOpen().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put(value, key);
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    });
+  }
+  function idbClearAll(){
+    return idbOpen().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction(['list','thumbs'], 'readwrite');
+        tx.objectStore('list').clear();
+        tx.objectStore('thumbs').clear();
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ reject(tx.error); };
+      });
+    }).catch(function(){});
+  }
+
+  // カタカナ→ひらがな正規化＋小文字化＋空白除去（ひらがな/カタカナを同一視した部分一致用）
+  function eightNormalize(s){
+    s = String(s||'');
+    s = s.replace(/[ァ-ヶ]/g, function(ch){ return String.fromCharCode(ch.charCodeAt(0) - 0x60); });
+    return s.toLowerCase().replace(/[\s　]+/g, '');
+  }
+
+  var eightAllItems = [];
+  var eightVersion = null;
+  var eightSortMode = 'exchangedAt'; // 'exchangedAt' | 'name'
+  var eightKeyword = '';
+  var eightRenderList = [];    // ソート・絞込・グルーピング後の描画対象（{type:'header'|'item', ...}）
+  var eightRenderedCount = 0;
+  var EIGHT_PAGE_SIZE = 200;
+  var eightRowObserver = null;      // 行の可視監視（サムネ遅延取得トリガ）
+  var eightSentinelObserver = null; // 末尾の追加描画トリガ
+  var eightThumbQueue = [];
+  var eightThumbInFlight = {};
+  var eightThumbTimer = null;
+
+  // 氏名の読み順に使える列（フリガナ/かな）は名刺DBに存在しないため、「所有している名刺」は氏名順にフォールバックする
+  function eightSortedFiltered(){
+    var kw = eightNormalize(eightKeyword);
+    var items = eightAllItems;
+    if(kw){
+      items = items.filter(function(it){
+        return eightNormalize(it.name).indexOf(kw)>=0 ||
+               eightNormalize(it.company).indexOf(kw)>=0 ||
+               eightNormalize(it.title).indexOf(kw)>=0;
+      });
+    }
+    items = items.slice();
+    if(eightSortMode==='name'){
+      items.sort(function(a,b){ return String(a.name||'').localeCompare(String(b.name||''), 'ja'); });
+      return items.map(function(it){ return { type:'item', data:it }; });
+    }
+    items.sort(function(a,b){ // 交換日順(降順)。未設定は末尾
+      var av = a.exchangedAt||'', bv = b.exchangedAt||'';
+      if(!av && !bv) return 0;
+      if(!av) return 1;
+      if(!bv) return -1;
+      return av < bv ? 1 : (av > bv ? -1 : 0);
+    });
+    var out = [], curLabel = null;
+    items.forEach(function(it){
+      var label = it.exchangedAt ? (it.exchangedAt.slice(0,4)+'年'+parseInt(it.exchangedAt.slice(5,7),10)+'月') : '日付未設定';
+      if(label !== curLabel){ out.push({ type:'header', label:label }); curLabel = label; }
+      out.push({ type:'item', data:it });
+    });
+    return out;
+  }
+
+  function eightRowHtml(it){
+    var thumbHtml = '<div class="ethumb"'+(it.thumbFileId?' data-thumb-id="'+esc(it.thumbFileId)+'"':'')+'></div>';
+    return '<div class="erow" data-id="'+esc(it.id)+'">'
+      + '<div class="ebody">'
+      + '<div class="ename">'+esc(it.name||'(氏名不明)')+'</div>'
+      + (it.company?'<div class="ecompany">'+esc(it.company)+'</div>':'')
+      + (it.title?'<div class="etitle">'+esc(it.title)+'</div>':'')
+      + '</div>' + thumbHtml + '</div>';
+  }
+
+  function eightRebuild(){
+    eightRenderList = eightSortedFiltered();
+    eightRenderedCount = 0;
+    EL('eightList').innerHTML = '';
+    if(!eightRenderList.length){
+      EL('eightList').innerHTML = '<div class="eightempty"><b>該当なし</b>検索語を変えてお試しください。</div>';
+      return;
+    }
+    eightAppendPage();
+  }
+
+  function eightAppendPage(){
+    var start = eightRenderedCount;
+    var end = Math.min(eightRenderList.length, start + EIGHT_PAGE_SIZE);
+    var html = '';
+    for(var i=start; i<end; i++){
+      var row = eightRenderList[i];
+      html += row.type==='header' ? '<div class="emonth">'+esc(row.label)+'</div>' : eightRowHtml(row.data);
+    }
+    EL('eightList').insertAdjacentHTML('beforeend', html);
+    eightRenderedCount = end;
+    eightObserveNewThumbs();
+    eightObserveSentinel();
+  }
+
+  function eightObserveSentinel(){
+    if(eightRenderedCount >= eightRenderList.length) return;
+    if(!eightSentinelObserver){
+      eightSentinelObserver = new IntersectionObserver(function(entries){
+        entries.forEach(function(en){ if(en.isIntersecting){ eightAppendPage(); } });
+      }, { rootMargin:'600px 0px' });
+    } else {
+      eightSentinelObserver.disconnect();
+    }
+    eightSentinelObserver.observe(EL('eightSentinel'));
+  }
+
+  // サムネのIntersectionObserver。rootMarginで「可視＋先読み1画面分」を表現
+  function eightObserveNewThumbs(){
+    if(!eightRowObserver){
+      eightRowObserver = new IntersectionObserver(function(entries){
+        entries.forEach(function(en){
+          if(en.isIntersecting){ eightQueueThumb(en.target); eightRowObserver.unobserve(en.target); }
+        });
+      }, { rootMargin:'100% 0px' });
+    }
+    EL('eightList').querySelectorAll('.ethumb[data-thumb-id]:not([data-observed])').forEach(function(el){
+      el.setAttribute('data-observed','1');
+      eightRowObserver.observe(el);
+    });
+  }
+
+  function eightQueueThumb(el){
+    var fid = el.getAttribute('data-thumb-id');
+    if(!fid || eightThumbInFlight[fid]) return;
+    eightThumbInFlight[fid] = true;
+    idbGet('thumbs', fid).then(function(b64){
+      if(b64){ eightPaintThumb(fid, b64); return; }
+      eightThumbQueue.push(fid);
+      clearTimeout(eightThumbTimer);
+      eightThumbTimer = setTimeout(eightFlushThumbQueue, 40);
+    }).catch(function(){
+      eightThumbQueue.push(fid);
+      clearTimeout(eightThumbTimer);
+      eightThumbTimer = setTimeout(eightFlushThumbQueue, 40);
+    });
+  }
+
+  function eightFlushThumbQueue(){
+    if(!eightThumbQueue.length) return;
+    var ids = eightThumbQueue.splice(0, 30);
+    api('getThumbs', { ids:ids }, { silent:true }).then(function(r){
+      if(!r || !r.ok) return;
+      Object.keys(r.data||{}).forEach(function(fid){
+        var b64 = r.data[fid];
+        idbSet('thumbs', fid, b64).catch(function(){});
+        eightPaintThumb(fid, b64);
+      });
+    }).catch(function(){});
+    if(eightThumbQueue.length){ eightThumbTimer = setTimeout(eightFlushThumbQueue, 40); }
+  }
+
+  function eightPaintThumb(fid, b64){
+    EL('eightList').querySelectorAll('.ethumb[data-thumb-id="'+fid.replace(/"/g,'')+'"]').forEach(function(el){
+      if(el.querySelector('img')) return;
+      el.innerHTML = '<img src="data:image/jpeg;base64,'+b64+'" alt="">';
+    });
+  }
+
+  EL('eightList').addEventListener('click', function(e){
+    var row = e.target.closest && e.target.closest('.erow');
+    if(row){ location.hash = '#person/'+row.getAttribute('data-id'); }
+  });
+
+  var eightSearchTimer = null;
+  EL('eightSearch').addEventListener('input', function(){
+    var v = this.value;
+    clearTimeout(eightSearchTimer);
+    eightSearchTimer = setTimeout(function(){ eightKeyword = v; eightRebuild(); }, 150);
+  });
+
+  document.querySelectorAll('.eightsortbtn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.eightsortbtn').forEach(function(b){ b.classList.remove('on'); });
+      btn.classList.add('on');
+      eightSortMode = btn.getAttribute('data-sort');
+      eightRebuild();
+    });
+  });
+
+  // タグ検索は一覧のクライアント絞込ではなく、既存の検索(search action)にtag条件を渡して#searchへ遷移する
+  // （listLiteはid/name/company/title/exchangedAt/thumbFileIdの6項目のみでtagsを含まないため）
+  EL('eightTagBtn').addEventListener('click', function(){
+    var html = '<div class="modaltitle">タグで探す</div><div class="eighttaglist">'
+      + TAG_CANDIDATES.map(function(t){ return '<div class="chip" data-tag="'+esc(t)+'">'+esc(t)+'</div>'; }).join('')
+      + '</div>';
+    openModal(html);
+    EL('modalRoot').querySelectorAll('.eighttaglist .chip').forEach(function(c){
+      c.addEventListener('click', function(){
+        closeModal();
+        pendingSearchQuery = { tag: c.getAttribute('data-tag') };
+        location.hash = '#search';
+      });
+    });
+  });
+
+  function eightSetHeaderVars(){
+    try {
+      var h = document.querySelector('header');
+      var bar = document.querySelector('.eightbar');
+      if(h) document.documentElement.style.setProperty('--headerH', h.offsetHeight+'px');
+      if(bar) document.documentElement.style.setProperty('--eightbarH', bar.offsetHeight+'px');
+    } catch(e){}
+  }
+  window.addEventListener('resize', eightSetHeaderVars);
+
+  // 起動時: IndexedDBキャッシュがあれば即描画→裏でlistDelta(sinceVersion)。無ければスピナー→listLite。
+  async function initEightList(){
+    eightSetHeaderVars();
+    var cached = null;
+    try { cached = await idbGet('list', IDB_LIST_KEY); } catch(e){}
+    if(cached && cached.items && cached.items.length){
+      eightAllItems = cached.items; eightVersion = cached.version;
+      eightRebuild();
+      eightSetHeaderVars();
+      try {
+        var d = await api('listDelta', { sinceVersion: eightVersion }, { silent:true });
+        if(d && d.ok && d.data && d.data.changed){
+          eightAllItems = d.data.items; eightVersion = d.data.version;
+          idbSet('list', IDB_LIST_KEY, { version:eightVersion, items:eightAllItems }).catch(function(){});
+          eightRebuild();
+        } else if(d && d.error==='auth'){ doLogout(); }
+      } catch(e){}
+      return;
+    }
+    EL('eightList').innerHTML = '<div class="eightspin">読み込み中…</div>';
+    try {
+      var r = await api('listLite', {}, { busyMessage:'一覧を取得中…' });
+      if(r && r.ok && r.data){
+        eightAllItems = r.data.items||[]; eightVersion = r.data.version;
+        idbSet('list', IDB_LIST_KEY, { version:eightVersion, items:eightAllItems }).catch(function(){});
+        eightRebuild();
+        eightSetHeaderVars();
+      } else if(r && r.error==='auth'){ doLogout(); }
+      else { EL('eightList').innerHTML = '<div class="eightempty"><b>取得できませんでした</b></div>'; }
+    } catch(e){
+      EL('eightList').innerHTML = '<div class="eightempty"><b>通信エラー</b></div>';
+    }
   }
 </script>
 </body>
