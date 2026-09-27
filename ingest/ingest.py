@@ -65,6 +65,10 @@ CARD_IMAGE_QUALITY_FALLBACKS = [80, 65, 50, 40]  # 合計サイズ超過時に�
 CARD_IMAGE_TOTAL_SIZE_LIMIT = 1_000_000  # base64文字列の合計上限(バイト)
 CARD_IMAGE_PDF_DPI = 150
 
+# 一覧表示用サムネ(Eight風UI)の生成設定。表面のみ・幅基準でリサイズ(既存の表裏full/thumbとは別物)
+LIST_THUMB_WIDTH = 480
+LIST_THUMB_QUALITY = 70
+
 # GAS に送る際にリトライしない（=最終的なエラーとして扱う）エラーコード
 GAS_NON_RETRYABLE_ERRORS = {"auth", "missing_required"}
 
@@ -354,6 +358,34 @@ def _render_card_side(img: Image.Image, quality: int, thumb_quality: int) -> dic
         "full": _encode_jpeg_b64(full_img, quality),
         "thumb": _encode_jpeg_b64(thumb_img, thumb_quality),
     }
+
+
+def _resize_to_width(img: Image.Image, width: int) -> Image.Image:
+    """幅がwidth以下になるよう縮小する(既に小さければそのまま)。高さはアスペクト比を保持。"""
+    w, h = img.size
+    if w <= width:
+        return img
+    scale = width / w
+    new_size = (width, max(1, round(h * scale)))
+    return img.resize(new_size, Image.LANCZOS)
+
+
+def build_list_thumb_b64(path: Path) -> Optional[str]:
+    """一覧表示用サムネ(表面のみ・幅480px・JPEG品質70)のbase64を生成する。
+
+    画像/PDFの読み込みに失敗した場合はNoneを返し、警告ログのみ出す
+    (カード登録自体は続行させるため、ここでは例外を送出しない)。
+    """
+    logger = logging.getLogger("ingest")
+    try:
+        pages = _load_card_page_images(path)
+        if not pages:
+            return None
+        thumb_img = _resize_to_width(pages[0], LIST_THUMB_WIDTH)
+        return _encode_jpeg_b64(thumb_img, LIST_THUMB_QUALITY)
+    except Exception as exc:
+        logger.warning("一覧用サムネの生成に失敗しました(カード登録は続行します): %s: %s", path.name, exc)
+        return None
 
 
 def _card_images_total_size(images: dict[str, dict[str, str]]) -> int:
@@ -702,8 +734,13 @@ def process_file(
             # 画像本体は表示せず、base64文字列の長さ(バイト数相当)だけ出す
             sizes = {side: {k: len(v) for k, v in sides.items()} for side, sides in images.items()}
             print(json.dumps({"images_base64_length": sizes}, ensure_ascii=False, indent=2))
-        logger.info("ok(dry-run) | %s | %s | %s", path.name, card["company"], card["name"])
+        # 一覧用サムネの生成・送信はdry-runではスキップする(件数のみ後段でまとめて報告)
+        logger.info("ok(dry-run) | %s | %s | %s | listThumb=生成・送信スキップ", path.name, card["company"], card["name"])
         return "ok"
+
+    list_thumb_b64 = build_list_thumb_b64(path)
+    if list_thumb_b64:
+        card["listThumb"] = list_thumb_b64
 
     try:
         result = send_to_gas(cfg, card)
@@ -740,6 +777,7 @@ def run_scan_once(client: anthropic.Anthropic, cfg: Config, dry_run: bool) -> bo
         return True
 
     all_ok = True
+    ok_count = 0
     for path in files:
         try:
             result = process_file(client, cfg, state, path, dry_run=dry_run, skip_write_check=False)
@@ -748,6 +786,11 @@ def run_scan_once(client: anthropic.Anthropic, cfg: Config, dry_run: bool) -> bo
             result = "error"
         if result == "error":
             all_ok = False
+        elif result == "ok":
+            ok_count += 1
+
+    if dry_run:
+        logger.info("dry-run: 一覧用サムネ生成対象 %d件（生成・送信は行っていません）", ok_count)
 
     if not dry_run:
         save_state(STATE_PATH, state)
@@ -837,7 +880,7 @@ def _find_source_file(watch_dir: Path, source_file: str) -> Optional[Path]:
     return None
 
 
-def run_backfill(cfg: Config, dry_run: bool) -> bool:
+def run_backfill_images(cfg: Config, dry_run: bool) -> bool:
     """GASのcardsWithoutImageを取得し、見つかったscan元ファイルから画像をattachImagesで紐付ける。
 
     戻り値: 失敗(見つからない/attachImages失敗)が1件もなければTrue。
@@ -906,8 +949,81 @@ def run_backfill(cfg: Config, dry_run: bool) -> bool:
         logger.info("ok | %s | %s", contact_id, source_file)
         success_count += 1
 
-    logger.info("バックフィル完了: 成功 %d件 / 失敗 %d件", success_count, fail_count)
+    logger.info("バックフィル完了(画像): 成功 %d件 / 失敗 %d件", success_count, fail_count)
     return fail_count == 0
+
+
+def run_backfill_thumbs(cfg: Config, dry_run: bool) -> bool:
+    """GASのcardsWithoutThumbを取得し、見つかったscan元ファイルから一覧用サムネをsetThumbで書き戻す。
+
+    戻り値: 失敗(見つからない/setThumb失敗)が1件もなければTrue。
+    """
+    logger = logging.getLogger("ingest")
+
+    try:
+        result = post_gas(cfg, "cardsWithoutThumb", {})
+    except GasError as exc:
+        logger.error("サムネバックフィル対象の取得に失敗しました: %s", exc)
+        return False
+
+    items = result.get("data", {}).get("items", [])
+    if not items:
+        logger.info("サムネバックフィル対象はありません")
+        return True
+
+    resolved: list[tuple[dict[str, Any], Optional[Path]]] = []
+    for item in items:
+        source_file = str(item.get("sourceFile", ""))
+        found = _find_source_file(cfg.watch_dir, source_file)
+        resolved.append((item, found))
+
+    found_count = sum(1 for _, p in resolved if p is not None)
+    missing_count = len(resolved) - found_count
+
+    if dry_run:
+        logger.info("サムネ未設定 %d件 / 生成対象(見つかった) %d件 / 見つからない %d件", len(resolved), found_count, missing_count)
+        return True
+
+    success_count = 0
+    fail_count = 0
+    for item, path in resolved:
+        contact_id = str(item.get("contactId", ""))
+        source_file = item.get("sourceFile", "")
+
+        if path is None:
+            logger.info("skip | %s | %s | ファイルが見つかりません", contact_id, source_file)
+            fail_count += 1
+            continue
+
+        thumb_b64 = build_list_thumb_b64(path)
+        if not thumb_b64:
+            logger.info("skip | %s | %s | サムネの生成に失敗しました", contact_id, source_file)
+            fail_count += 1
+            continue
+
+        try:
+            post_gas(
+                cfg, "setThumb",
+                {"id": contact_id, "thumbB64": thumb_b64, "sourceFile": source_file},
+                non_retryable_errors=GAS_NON_RETRYABLE_ERRORS | {"not_found", "missing_params"},
+            )
+        except GasError as exc:
+            logger.info("error | %s | %s | setThumb失敗: %s", contact_id, source_file, exc)
+            fail_count += 1
+            continue
+
+        logger.info("ok | %s | %s", contact_id, source_file)
+        success_count += 1
+
+    logger.info("バックフィル完了(サムネ): 成功 %d件 / 失敗 %d件", success_count, fail_count)
+    return fail_count == 0
+
+
+def run_backfill(cfg: Config, dry_run: bool) -> bool:
+    """画像バックフィルとサムネバックフィルをまとめて実行する。戻り値: 両方成功すればTrue。"""
+    images_ok = run_backfill_images(cfg, dry_run)
+    thumbs_ok = run_backfill_thumbs(cfg, dry_run)
+    return images_ok and thumbs_ok
 
 
 # --------------------------------------------------------------------------

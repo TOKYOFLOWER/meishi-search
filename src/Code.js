@@ -49,6 +49,15 @@ var SNS_DOMAIN_RULES = {
   youtube: /(^|\.)youtube\.com$|(^|\.)youtu\.be$/i
 };
 
+// ====== Eight風UI: デバイストークン・軽量リスト・サムネ配信 ======
+var THUMB_COL = 'thumbFileId'; // 名刺DB末尾列（幅480px/JPEG70%のサムネfileId）
+var DEVICES_SHEET = 'devices';
+var DEVICES_HEADER = ['token_hash', 'device_label', 'created_at', 'last_seen', 'revoked'];
+var TOKEN_TTL_DAYS = 180; // last_seenからの有効期限（延長あり）
+var AUTH_CACHE_SEC = 600; // トークン検証OKの結果を10分キャッシュ（last_seen書き込み頻度を抑える）
+var LIST_LITE_CACHE_SEC = 300; // listLite/listDelta の結果を5分キャッシュ
+var THUMB_MAX_IDS = 30; // getThumbs 1回あたりの最大件数
+
 var SS_CACHE_ = null;
 function ss_() { // 1回の実行内では openById を1度だけ（各 action が複数シートを読むため）
   if (!SS_CACHE_) SS_CACHE_ = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -78,11 +87,24 @@ function doPost(e) {
   var out;
   try {
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    if (!authOk_(body.user, body.pass)) {
+    var authRes = authAny_(body);
+    if (!authRes.ok) {
       Utilities.sleep(800); // 総当たり対策の軽い遅延
-      out = { ok: false, error: 'auth' };
+      out = { ok: false, error: authRes.error || 'auth' };
     } else if (body.action === 'ping') {
       out = { ok: true };
+    } else if (body.action === 'login') {
+      out = login_(body);
+    } else if (body.action === 'logout') {
+      out = logout_(body);
+    } else if (body.action === 'listLite') {
+      out = listLite_(body);
+    } else if (body.action === 'listDelta') {
+      out = listDelta_(body);
+    } else if (body.action === 'getThumbs') {
+      out = getThumbs_(body);
+    } else if (body.action === 'setThumb') {
+      out = setThumb_(body);
     } else if (body.action === 'filters') {
       out = { ok: true, data: getFilters() };
     } else if (body.action === 'search') {
@@ -97,6 +119,8 @@ function doPost(e) {
       out = attachImages_(body);
     } else if (body.action === 'cardsWithoutImage') {
       out = { ok: true, data: cardsWithoutImage_() };
+    } else if (body.action === 'cardsWithoutThumb') {
+      out = { ok: true, data: cardsWithoutThumb_() };
     } else if (body.action === 'stats') {
       out = { ok: true, data: computeStats_() };
     } else if (body.action === 'newCards') {
@@ -143,6 +167,83 @@ function authOk_(user, pass) {
   var U = p.getProperty('APP_USER'), P = p.getProperty('APP_PASS');
   if (!P) return false; // 未設定なら全拒否(安全側)
   return String(user || '') === String(U || '') && String(pass || '') === String(P);
+}
+
+// token があればデバイストークン認証、無ければ従来の user/pass 直送方式（後方互換）
+function authAny_(body) {
+  if (body && body.token) return auth_(body);
+  return authOk_(body && body.user, body && body.pass) ? { ok: true } : { ok: false, error: 'auth' };
+}
+
+/* ---- デバイストークン（Eight風UI: 永続ログイン） ---- */
+function ensureDevicesSheet_() {
+  return ensureSheetWithHeader_(DEVICES_SHEET, DEVICES_HEADER).sheet;
+}
+function sha256Hex_(s) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s || ''), Utilities.Charset.UTF_8);
+  return bytes.map(function (b) {
+    var v = (b < 0 ? b + 256 : b).toString(16);
+    return v.length < 2 ? '0' + v : v;
+  }).join('');
+}
+function genDeviceToken_() {
+  return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+}
+// devices シートを token_hash で検索。見つかれば {sheet, rowNum(1始まり), header, c, values}
+function findDeviceByHash_(tokenHash) {
+  var sh = ensureDevicesSheet_();
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return null;
+  var lastCol = sh.getLastColumn();
+  var header = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var c = colIndex_(header);
+  var values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][c['token_hash']] || '') === tokenHash) {
+      return { sheet: sh, rowNum: i + 2, header: header, c: c, values: values[i] };
+    }
+  }
+  return null;
+}
+// action=login: authAny_ で user/pass 検証済みの上でトークンを新規発行
+function login_(body) {
+  var label = String((body && (body.deviceLabel || body.device_label)) || '').trim() || 'device';
+  var token = genDeviceToken_();
+  var sh = ensureDevicesSheet_();
+  var now = nowStamp_();
+  sh.appendRow([sha256Hex_(token), label, now, now, false]);
+  return { ok: true, data: { token: token } };
+}
+// action=logout: 該当行を revoked=true に
+function logout_(body) {
+  var token = String((body && body.token) || '').trim();
+  if (!token) return { ok: false, error: 'missing_token' };
+  var found = findDeviceByHash_(sha256Hex_(token));
+  if (found) {
+    found.sheet.getRange(found.rowNum, found.c['revoked'] + 1).setValue(true);
+    try { CacheService.getScriptCache().remove('authtok:' + sha256Hex_(token)); } catch (e) { /* noop */ }
+  }
+  return { ok: true };
+}
+// 共通ガード: token のハッシュ照合＋期限(last_seenから180日)＋revoked確認。OKならlast_seen更新(10分キャッシュ)
+function auth_(payload) {
+  var token = String((payload && payload.token) || '').trim();
+  if (!token) return { ok: false, error: 'AUTH' };
+  var hash = sha256Hex_(token);
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'authtok:' + hash;
+  if (cache.get(cacheKey) === '1') return { ok: true };
+  var found = findDeviceByHash_(hash);
+  if (!found) return { ok: false, error: 'AUTH' };
+  if (isTrue_(found.values[found.c['revoked']])) return { ok: false, error: 'AUTH' };
+  var lastSeenRaw = found.values[found.c['last_seen']];
+  var lastSeenDate = lastSeenRaw instanceof Date ? lastSeenRaw : new Date(String(lastSeenRaw || '').replace(' ', 'T'));
+  if (isNaN(lastSeenDate.getTime())) lastSeenDate = new Date(0);
+  var ageDays = (Date.now() - lastSeenDate.getTime()) / 86400000;
+  if (ageDays > TOKEN_TTL_DAYS) return { ok: false, error: 'AUTH' };
+  found.sheet.getRange(found.rowNum, found.c['last_seen'] + 1).setValue(nowStamp_());
+  cache.put(cacheKey, '1', AUTH_CACHE_SEC);
+  return { ok: true };
 }
 
 /* ==================================================================
@@ -567,6 +668,7 @@ function addCardToSheet(card) {
   var memo = String(card.memo || '').trim();
   var sourceFile = String(card.source_file || '').trim();
   var scannedAt = String(card.scanned_at || '').trim();
+  var listThumbB64 = String(card.listThumb || '').trim(); // 一覧表示用サムネ(幅480px/JPEG70%)。base64はここではDriveに未保存
 
   if (!company || !name) return { ok: false, error: 'missing_required' }; // どちらかが空なら拒否
 
@@ -659,6 +761,22 @@ function addCardToSheet(card) {
     var batchId = String(card.batch_id || '').trim() || ('scan-' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMdd'));
     record[BATCH_COL] = batchId;
 
+    // 一覧表示用サムネ: base64をDrive(既存の私的フォルダ)に保存し、fileIdをthumbFileId列に記録
+    if (listThumbB64) {
+      try {
+        var thumbName = (sourceFile ? sourceFile.replace(/\.[^.]+$/, '') : newId) + '_thumb.jpg';
+        var thumbFileId = saveImageFile_(getImageFolder_(), thumbName, listThumbB64);
+        if (c[THUMB_COL] === undefined) {
+          sh.getRange(1, header.length + 1).setValue(THUMB_COL);
+          header = header.slice();
+          header.push(THUMB_COL);
+        }
+        record[THUMB_COL] = thumbFileId;
+      } catch (e) {
+        Logger.log('addCard: 一覧用サムネの保存に失敗（登録は継続）: ' + newId + ' ' + e);
+      }
+    }
+
     var row = header.map(function (h) {
       var key = String(h).trim();
       return record.hasOwnProperty(key) ? record[key] : '';
@@ -734,7 +852,7 @@ function setupSnsBulkColumns_() {
   var lastCol = Math.max(cardsSh.getLastColumn(), 1);
   var cardsHeaderVals = cardsSh.getRange(1, 1, 1, lastCol).getValues()[0];
   var cardsC = colIndex_(cardsHeaderVals);
-  [BATCH_COL].concat(IMAGE_COLS).forEach(function (col) {
+  [BATCH_COL].concat(IMAGE_COLS).concat([THUMB_COL]).forEach(function (col) {
     if (cardsC[col] !== undefined) return;
     cardsSh.getRange(1, cardsHeaderVals.length + 1).setValue(col);
     cardsHeaderVals = cardsHeaderVals.concat([col]);
@@ -1274,6 +1392,24 @@ function cardsWithoutImage_() {
   return { items: items };
 }
 
+// 一覧用サムネ(thumbFileId)が未登録で備考に元ファイル名(scan:<name>)がある人物の一覧（backfill用）
+function cardsWithoutThumb_() {
+  var d = readCards_(['id', '備考', THUMB_COL]), c = colIndex_(d.header);
+  var items = [];
+  if (c['備考'] === undefined) return { items: items };
+  d.rows.forEach(function (r) {
+    var thumb = c[THUMB_COL] !== undefined ? String(r[c[THUMB_COL]] || '').trim() : '';
+    if (thumb) return;
+    var biko = String(r[c['備考']] || '');
+    var m = biko.match(/^scan:([^\/]+?)(?:\s*\/|$)/);
+    if (!m) return;
+    var name = m[1].trim();
+    if (!name) return;
+    items.push({ contactId: String(r[c['id']]), sourceFile: name });
+  });
+  return { items: items };
+}
+
 // 1x1 JPEG（テスト用ダミー画像）
 var TEST_JPEG_B64_ = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
 // 画像テスト: (a) attachImages → 4列に fileId (b) cardImage thumb/full が返る (c) fileId 空で image:null。テスト行・ファイルは削除
@@ -1365,7 +1501,7 @@ function bootCacheGet_(key) {
     return JSON.parse(v);
   } catch (e) { return null; }
 }
-function bootCachePut_(key, data) {
+function bootCachePut_(key, data, ttlSec) {
   try {
     var json = JSON.stringify(data);
     var v = 'js:' + json;
@@ -1373,7 +1509,7 @@ function bootCachePut_(key, data) {
       v = 'gz:' + Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(json)).getBytes());
     }
     if (v.length > BOOT_CACHE_MAX) return false; // 圧縮しても入らない: キャッシュせず継続
-    CacheService.getScriptCache().put(key, v, BOOT_CACHE_SEC);
+    CacheService.getScriptCache().put(key, v, ttlSec || BOOT_CACHE_SEC);
     return true;
   } catch (e) { return false; }
 }
@@ -1406,6 +1542,96 @@ function bootstrap_(input) {
   bootCachePut_(key, data);
   Logger.log('bootstrap: ' + (Date.now() - t0) + 'ms');
   return { ok: true, data: data };
+}
+
+/* ==================================================================
+ *  Eight風UI: 軽量リスト（listLite / listDelta）＋ サムネ配信（getThumbs / setThumb）
+ * ================================================================== */
+// version = スプレッドシート自体の最終更新時刻(ms)。セル編集があれば変わるため、
+// listLite/listDelta のキャッシュキー・差分判定にそのまま使える。
+function listLiteVersion_() {
+  return String(DriveApp.getFileById(SPREADSHEET_ID).getLastUpdated().getTime());
+}
+function buildListLite_() {
+  var d = readCards_(['id', '氏名', '会社名', '役職', '名刺交換日', THUMB_COL]), c = colIndex_(d.header);
+  return d.rows.map(function (r) {
+    return {
+      id: String(r[c['id']] || ''),
+      name: String(r[c['氏名']] || ''),
+      company: String(r[c['会社名']] || ''),
+      title: String(r[c['役職']] || ''),
+      exchangedAt: pickExchanged_(r[c['名刺交換日']]),
+      thumbFileId: c[THUMB_COL] !== undefined ? String(r[c[THUMB_COL]] || '') : ''
+    };
+  });
+}
+function listLiteData_() {
+  var version = listLiteVersion_();
+  var cacheKey = 'listlite:v1:' + version;
+  var cached = bootCacheGet_(cacheKey);
+  if (cached) return { items: cached, version: version };
+  var items = buildListLite_();
+  bootCachePut_(cacheKey, items, LIST_LITE_CACHE_SEC);
+  return { items: items, version: version };
+}
+function listLite_(body) {
+  var d = listLiteData_();
+  return { ok: true, data: { items: d.items, version: d.version } };
+}
+function listDelta_(body) {
+  var since = String((body && body.sinceVersion) || '');
+  var version = listLiteVersion_();
+  if (since && since === version) return { ok: true, data: { changed: false, version: version } };
+  var d = listLiteData_();
+  return { ok: true, data: { changed: true, items: d.items, version: d.version } };
+}
+// ids(最大30) → {id: base64jpeg}。id は listLite が返す thumbFileId（既存の私的Driveフォルダのファイル）
+function getThumbs_(body) {
+  var ids = Array.isArray(body && body.ids) ? body.ids : [];
+  ids = ids.slice(0, THUMB_MAX_IDS).map(function (x) { return String(x || '').trim(); }).filter(function (x) { return x; });
+  var out = {};
+  ids.forEach(function (fid) {
+    try {
+      var blob = DriveApp.getFileById(fid).getBlob();
+      out[fid] = Utilities.base64Encode(blob.getBytes());
+    } catch (e) {
+      Logger.log('getThumbs: 取得失敗 ' + fid + ' ' + e);
+    }
+  });
+  return { ok: true, data: out };
+}
+// id(名刺DBのcontactId) + thumbFileId(既知のDriveファイルID) または thumbB64(未保存のbase64、
+// この場合はここでDriveへ保存してfileIdを得る)を受けて thumbFileId 列に書き込む（backfill用）
+function setThumb_(body) {
+  var id = String((body && (body.id || body.contactId)) || '').trim();
+  var thumbFileId = String((body && body.thumbFileId) || '').trim();
+  var thumbB64 = String((body && body.thumbB64) || '').trim();
+  if (!id || (!thumbFileId && !thumbB64)) return { ok: false, error: 'missing_params' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var d = readCards_(['id']), c = colIndex_(d.header);
+    var rowIdx = -1;
+    for (var i = 0; i < d.rows.length; i++) { if (String(d.rows[i][c['id']]) === id) { rowIdx = i; break; } }
+    if (rowIdx < 0) return { ok: false, error: 'not_found' };
+    if (!thumbFileId) {
+      var thumbName = String((body && body.sourceFile) || id).replace(/\.[^.]+$/, '') + '_thumb.jpg';
+      thumbFileId = saveImageFile_(getImageFolder_(), thumbName, thumbB64);
+    }
+    var sh = getSheet_();
+    var lastCol = sh.getLastColumn();
+    var header = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    var c2 = colIndex_(header);
+    if (c2[THUMB_COL] === undefined) {
+      sh.getRange(1, header.length + 1).setValue(THUMB_COL);
+      c2[THUMB_COL] = header.length;
+    }
+    sh.getRange(rowIdx + 2, c2[THUMB_COL] + 1).setValue(thumbFileId);
+    invalidateBootstrapCache_();
+    return { ok: true, data: { thumbFileId: thumbFileId } };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* ==================================================================
