@@ -311,6 +311,68 @@
                animation:busyspin .8s linear infinite;}
   #busyOverlay .busymsg{color:#fff; font-size:15px; text-align:center; padding:0 24px;}
   @keyframes busyspin{ to{ transform:rotate(360deg); } }
+
+  /* --- 検索強化・選択削除・ゴミ箱 --- */
+  .hbtns{display:flex; gap:8px;}
+  .eightsearchwrap{position:relative; flex:1; min-width:0; display:flex;}
+  .eightsearchwrap .eightsearch{width:100%; padding-right:36px;}
+  .eightsearch::-webkit-search-cancel-button{-webkit-appearance:none; display:none;}
+  .eightclear{position:absolute; right:4px; top:50%; transform:translateY(-50%); width:30px; height:30px; border:none;
+              border-radius:50%; background:transparent; color:var(--muted); font-size:20px; line-height:1; cursor:pointer;}
+  .eightclear[hidden]{display:none;}
+  .eightmeta{display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 16px; background:#fff;
+             border-bottom:1px solid var(--line); font-size:13px; color:var(--text);}
+  .eightmeta[hidden]{display:none;}
+  .eightmeta #eightCount{font-weight:700; color:var(--ink);}
+  .eighttagchip{font-size:12px; padding:3px 10px; border-radius:999px; background:var(--ink); color:#fff;}
+  .eighttagchip[hidden]{display:none;}
+  .eighttagchip b{margin-left:4px; cursor:pointer;}
+  .eightmemorow{display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:12px 16px; background:#fff;
+                border-bottom:1px solid var(--line); font-size:12.5px; color:var(--muted);}
+  .eightmemorow[hidden]{display:none;}
+  .eightmemorow button{padding:9px 14px; border-radius:10px; border:1px solid var(--line); background:var(--paper); color:var(--ink); font-size:13px;}
+  .eightmemorow button[hidden]{display:none;}
+  .eightsortbtn.eightselbtn{flex:0 0 auto; padding:8px 12px;}
+  .erow .echk{flex:none; width:22px; height:22px; margin:0; pointer-events:none;}
+  .erow.sel{background:rgba(0,102,255,.08);}
+  body.eightselmode .eightlist{padding-bottom:110px;}
+  #eightSelBar{position:fixed; left:0; right:0; bottom:0; z-index:40; background:#fff; border-top:1px solid var(--line);
+          box-shadow:0 -2px 10px rgba(0,0,0,.12); padding:8px 10px calc(8px + env(safe-area-inset-bottom)); display:flex; flex-wrap:wrap; gap:6px; align-items:center;}
+  #eightSelBar[hidden]{display:none;}
+  #eightSelBar .selcount{font-size:13.5px; font-weight:700; margin-right:auto; padding-left:4px;}
+  #eightSelBar button{font-size:12.5px; padding:9px 10px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  #eightSelBar button.danger{background:#c0262d; color:#fff; border-color:#c0262d; font-weight:700;}
+  #eightSelBar button:disabled{opacity:.45;}
+  .selhint{width:100%; font-size:12px; color:#c0262d; padding-left:4px;}
+  .selhint:empty{display:none;}
+  .deletebox{padding:28px 16px 48px; background:var(--paper);}
+  .deletebtn{display:block; width:100%; padding:13px; border-radius:12px; border:1px solid #e3c4c4; background:#fff;
+             color:#c0262d; font-size:14px; font-weight:700; cursor:pointer;}
+  .deletebtn:disabled{opacity:.45; cursor:default;}
+  .deletehint{font-size:12px; color:#c0262d; text-align:center; margin-top:8px;}
+  .deletehint:empty{display:none;}
+  .formsave button.dangerbtn{background:#c0262d; border-color:#c0262d; color:#fff;}
+  .formsave button:disabled{opacity:.45;}
+  .delrow{padding:5px 0; font-size:13.5px; border-bottom:1px dashed var(--line);}
+  .delrow:last-child{border-bottom:none;}
+  .delrow span{display:block; font-size:12px; color:var(--muted);}
+  .delrow.dim{color:var(--muted);}
+  #toast.withact{pointer-events:auto; display:flex; align-items:center; gap:12px;}
+  #toast .toastact{border:none; background:transparent; color:#ffd9a8; font-size:13px; font-weight:700; text-decoration:underline; padding:2px 4px; cursor:pointer;}
+  .trashnote{padding:10px 16px; font-size:12px; color:var(--muted); background:#fdf3ea; line-height:1.6;}
+  .trashbar{position:sticky; top:var(--headerH,52px); z-index:9; display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+            padding:8px 12px; background:#fff; border-bottom:1px solid var(--line);}
+  .trashbar[hidden]{display:none;}
+  .trashbar .selcount{font-size:12.5px; font-weight:700; margin-right:auto;}
+  .trashbar button, .tbtn{font-size:12.5px; padding:8px 10px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .trashbar button.danger, .tbtn.danger{color:#c0262d; border-color:#e3c4c4;}
+  .trashbar button:disabled, .tbtn:disabled{opacity:.45;}
+  .trashrow{display:flex; align-items:center; gap:10px; padding:11px 16px; border-bottom:1px solid var(--line); background:#fff;}
+  .trashrow .tchk{flex:none; width:22px; height:22px; margin:0;}
+  .trashrow .ebody{flex:1; min-width:0;}
+  .tbtns{display:flex; flex-direction:column; gap:6px;}
+  .trashhint{padding:6px 16px; font-size:12px; color:#c0262d;}
+  .trashhint:empty{display:none;}
 </style>
 </head>
 <body>
@@ -341,7 +403,7 @@
       <button class="backbtn" id="backBtn" hidden aria-label="戻る">←</button>
       <b id="headerTitle">名刺検索</b><span class="total" id="total"></span>
     </div>
-    <button class="logout" id="logout">ログアウト</button>
+    <div class="hbtns"><button class="logout" id="settingsBtn">設定</button><button class="logout" id="logout">ログアウト</button></div>
   </header>
 
   <!-- ホーム（検索） -->
@@ -354,14 +416,20 @@
 
     <!-- Eight風 一覧UI: 全件をキャッシュから即表示し、検索バー・並び替えで絞り込む -->
     <div class="eightbar">
-      <input id="eightSearch" class="eightsearch" type="search" placeholder="人・会社を探す" enterkeyhint="search">
+      <div class="eightsearchwrap">
+        <input id="eightSearch" class="eightsearch" type="search" placeholder="氏名・会社・電話・メール・タグ…" enterkeyhint="search" autocomplete="off">
+        <button type="button" id="eightClear" class="eightclear" aria-label="クリア" hidden>&times;</button>
+      </div>
       <button type="button" id="eightTagBtn" class="eighttagbtn">タグ検索</button>
     </div>
     <div class="eightsort">
       <button type="button" class="eightsortbtn on" data-sort="exchangedAt">交換日順</button>
       <button type="button" class="eightsortbtn" data-sort="name">所有している名刺</button>
+      <button type="button" class="eightsortbtn eightselbtn" id="eightSelBtn">選択</button>
     </div>
+    <div class="eightmeta" id="eightMeta" hidden><span id="eightCount"></span><span class="eighttagchip" id="eightTagChip" hidden></span></div>
     <div class="eightlist" id="eightList"><div class="eightspin">読み込み中…</div></div>
+    <div class="eightmemorow" id="eightMemoRow" hidden><button type="button" id="eightMemoBtn">メモ・履歴も検索</button><span id="eightMemoNote"></span></div>
     <div class="eightsentinel" id="eightSentinel"></div>
 
     <div class="heading">詳細検索</div>
@@ -439,6 +507,10 @@
     <div class="snsblock" id="personSnsBlock"></div>
     <div class="reviewbody" id="personFormBox"></div>
     <div class="formsave" id="personSaveRow"></div>
+    <div class="deletebox">
+      <button type="button" class="deletebtn" id="personDeleteBtn">この名刺を削除</button>
+      <div class="deletehint" id="personDeleteHint"></div>
+    </div>
   </section>
 
   <!-- SNS確認 -->
@@ -475,9 +547,30 @@
       <button type="button" class="sectionbtn" id="snsMarkCheckedBtn">候補なしで確認済みにする</button>
     </div>
   </section>
+
+  <!-- 設定 -->
+  <section data-view="settings" id="view-settings" hidden>
+    <div class="heading">ゴミ箱</div>
+    <div class="trashnote">削除した名刺はここから復元できます。「完全削除」するとスプレッドシートの名刺・人物・接触履歴の行が消えます（名刺画像は Drive のゴミ箱に移り、30日間は Drive から復元できます）。</div>
+    <div class="trashhint" id="trashHint"></div>
+    <div class="trashbar" id="trashBar" hidden>
+      <span class="selcount" id="trashCount">0件選択中</span>
+      <button type="button" data-act="selAll">全選択/解除</button>
+      <button type="button" data-act="restore" data-needs-online data-needs-sel>選択を復元</button>
+      <button type="button" class="danger" data-act="purge" data-needs-online data-needs-sel>選択を完全削除</button>
+    </div>
+    <div id="trashList"></div>
+  </section>
 </div>
 
 <div id="toast"></div>
+<div id="eightSelBar" hidden>
+  <span class="selcount" id="eightSelCount">0件選択中</span>
+  <button type="button" id="eightSelAll">表示中を全選択</button>
+  <button type="button" id="eightSelClear">解除</button>
+  <button type="button" class="danger" id="eightSelDelete" disabled>削除</button>
+  <span class="selhint" id="eightSelHint"></span>
+</div>
 <div id="modalRoot"></div>
 <div id="busyOverlay" hidden><div class="busyspin"></div><div class="busymsg" id="busyMsg"></div></div>
 <datalist id="eventNamesList"></datalist>
@@ -524,6 +617,7 @@
   var STATS_FRESH = false; // bootstrap 直後は stats 取得済みなので、ホーム初回描画の loadStats を1回だけ抑制
   var reviewState = { list:[], index:0 };
   var CURRENT_PERSON_ID = null;
+  var CURRENT_PERSON_INFO = null; // {name, company} 削除確認モーダル用
   var CURRENT_SNS_ID = null;
   var pendingSearchQuery = null;
   var pendingNewOptions = null;
@@ -590,7 +684,12 @@
     tags: '読み込み中…',
     stats: '読み込み中…',
     filters: '読み込み中…',
-    cardImage: '画像を取得中…'
+    cardImage: '画像を取得中…',
+    deleteCards: '削除しています…',
+    restoreCards: '復元しています…',
+    purgeCards: '完全に削除しています…',
+    listTrash: 'ゴミ箱を取得中…',
+    searchText: 'メモ・履歴を検索中…'
   };
   function busyMessageFor(action){ return BUSY_MESSAGES[action] || '処理中…'; }
 
@@ -625,8 +724,21 @@
   }
 
   function toast(msg){
-    var t = EL('toast'); t.textContent = msg; t.classList.add('show');
+    var t = EL('toast'); t.classList.remove('withact'); t.textContent = msg; t.classList.add('show');
     clearTimeout(toast._t); toast._t = setTimeout(function(){ t.classList.remove('show'); }, 3000);
+  }
+  // ボタン付きトースト（削除の「元に戻す」用）。ms 経過で消える
+  function toastAction(msg, label, fn, ms){
+    var t = EL('toast');
+    t.innerHTML = '';
+    var sp = document.createElement('span'); sp.textContent = msg;
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'toastact'; b.textContent = label;
+    t.appendChild(sp); t.appendChild(b);
+    t.classList.add('show', 'withact');
+    clearTimeout(toast._t);
+    var hide = function(){ t.classList.remove('show'); };
+    b.onclick = function(){ clearTimeout(toast._t); hide(); fn(); };
+    toast._t = setTimeout(hide, ms || 5000);
   }
   function openModal(html){
     EL('modalRoot').innerHTML = '<div class="modalbg"><div class="modalbox">'+html+'</div></div>';
@@ -798,6 +910,7 @@
   EL('pass').addEventListener('keyup', function(e){ if(e.key==='Enter') doLogin(); });
   EL('user').addEventListener('keyup', function(e){ if(e.key==='Enter') EL('pass').focus(); });
   EL('logout').onclick = function(){ doLogout(); };
+  EL('settingsBtn').onclick = function(){ location.hash = '#settings'; };
 
   async function doLogin(){
     var user = EL('user').value.trim(), pass = EL('pass').value;
@@ -875,9 +988,10 @@
     var h = location.hash.replace(/^#/,'') || 'home';
     var parts = h.split('/');
     var view = parts[0], param = parts[1];
-    var titleMap = { home:'名刺検索', search:'検索結果', 'new':'新着名刺', review:'整理モード', person:'人物詳細', sns:'SNS確認' };
+    var titleMap = { home:'名刺検索', search:'検索結果', 'new':'新着名刺', review:'整理モード', person:'人物詳細', sns:'SNS確認', settings:'設定' };
 
     if(view==='search'){
+      eightLeaveHome_();
       showView('home');
       EL('backBtn').hidden = false;
       EL('headerTitle').textContent = titleMap.search;
@@ -891,7 +1005,8 @@
       loadStats();
       return;
     }
-    if(['home','new','review','person','sns'].indexOf(view)===-1) view='home';
+    if(['home','new','review','person','sns','settings'].indexOf(view)===-1) view='home';
+    eightLeaveHome_();
     showView(view);
     EL('backBtn').hidden = (view==='home');
     EL('headerTitle').textContent = titleMap[view];
@@ -900,9 +1015,10 @@
     else if(view==='review'){ initReviewView(); }
     else if(view==='person'){ initPersonView(param); }
     else if(view==='sns'){ initSnsView(param); }
+    else if(view==='settings'){ initSettingsView(); }
   }
   function showView(name){
-    ['home','new','review','person','sns'].forEach(function(v){ EL('view-'+v).hidden = (v!==name); });
+    ['home','new','review','person','sns','settings'].forEach(function(v){ EL('view-'+v).hidden = (v!==name); });
   }
   EL('backBtn').onclick = function(){
     if(window.history.length>1){ window.history.back(); } else { location.hash='#home'; }
@@ -1496,6 +1612,7 @@
     EL('personHead').innerHTML = cachedItem
       ? '<div class="name3">'+esc(cachedItem.name||'(氏名不明)')+'</div><div class="sub3">'+esc([cachedItem.company, cachedItem.title].filter(Boolean).join(' / '))+'</div>'
       : '';
+    CURRENT_PERSON_INFO = cachedItem ? { name:cachedItem.name, company:cachedItem.company } : null;
     EL('personInfo').innerHTML='<div class="spin">読み込み中…</div>';
     EL('personImageBox').innerHTML='';
     EL('personActs').innerHTML='';
@@ -1557,6 +1674,7 @@
   }
   function renderPerson(id, data){
     var card=data.card, crm=data.crm, sns=data.sns, histories=data.histories||[];
+    CURRENT_PERSON_INFO = { name:card.name, company:card.company };
     EL('personHead').innerHTML = '<div class="name3">'+esc(card.name||'(氏名不明)')+'</div>'
       + '<div class="sub3">'+esc([card.company, card.dept, card.title].filter(Boolean).join(' / '))+'</div>';
     EL('personInfo').innerHTML = personInfoHtml(card);
@@ -1718,6 +1836,7 @@
 </script>
 <script>
   // ==================== モックモード（?mock=1 のみ有効。本番挙動には影響しない） ====================
+  var MOCK_TRASH = {}, MOCK_VER = 1; // モック用: ゴミ箱(id→deletedAt)と一覧version
   var MOCK_DB = { persons: [
     { card:{ id:'M00001', company:'株式会社ABC商事', dept:'営業部', title:'代表取締役', roleLevel:'経営者', name:'田中太郎', industry:'IT', email:'tanaka@abc.co.jp', postal:'100-0001', pref:'東京都', city:'千代田区', address:'東京都千代田区1-1-1', telCompany:'03-1111-2222', mobile:'090-1111-2222', fax:'', url:'https://abc-example.co.jp', exchanged:'2026-09-05', importedAt:'2026-09-08', batchId:'eight-20260908-0900', biko:'' },
       crm:{ organized:false, importance:'高', relationship:'初対面', tags:['経営者','要フォロー'], needs:'新規取引先探し', canIntroduce:'', wantIntroduce:'', nextAction:'', nextActionDate:'', memo:'' },
@@ -1940,14 +2059,61 @@
     if(action==='login'){ return {ok:true, data:{ token:'mock-token-'+Date.now() }}; }
     if(action==='logout'){ return {ok:true}; }
     if(action==='listLite' || action==='listDelta'){
-      // 実サーバーと同じ短縮キー({id,n,c,t,d,th})で返す(フロント側のexpandListItems_で展開される)
-      var mockItems = MOCK_DB.persons.map(function(p){
-        return { id:p.card.id, n:p.card.name, c:p.card.company, t:p.card.title,
-                 d:p.card.exchanged||'', th:'' };
+      // 実サーバーと同じ短縮キー(id,n,c,t,d,th,k,e,p,a,i,ev,tg)で返す(フロント側のexpandListItems_で展開される)
+      var mockItems = [], mockDeleted = [];
+      MOCK_DB.persons.forEach(function(p){
+        if(MOCK_TRASH[p.card.id]){ mockDeleted.push(p.card.id); return; }
+        var o = { id:p.card.id, n:p.card.name, c:p.card.company, t:p.card.title, d:p.card.exchanged||'', th:'' };
+        if(p.card.kana) o.k = p.card.kana;
+        if(p.card.email) o.e = p.card.email;
+        var tel = ((p.card.telCompany||'').replace(/\D/g,'')+' '+(p.card.mobile||'').replace(/\D/g,'')).trim();
+        if(tel) o.p = tel;
+        var ad = (p.card.pref||'')+(p.card.city||''); if(ad) o.a = ad;
+        if(p.card.industry) o.i = p.card.industry;
+        var evs = [];
+        p.histories.forEach(function(h){ if(h.eventName && evs.indexOf(h.eventName)<0) evs.push(h.eventName); });
+        if(evs.length) o.ev = evs.join(' ');
+        if(p.crm.tags && p.crm.tags.length) o.tg = p.crm.tags;
+        mockItems.push(o);
       });
-      var mockVersion = 'mock-1';
+      var mockVersion = 'mock-' + MOCK_VER;
       if(action==='listDelta' && body.sinceVersion===mockVersion) return {ok:true, data:{ changed:false, version:mockVersion }};
-      return {ok:true, data:{ changed:true, items:mockItems, version:mockVersion }};
+      return {ok:true, data:{ changed:true, items:mockItems, deletedIds:mockDeleted, version:mockVersion }};
+    }
+    if(action==='deleteCards' || action==='restoreCards'){
+      var mCnt = 0;
+      (body.ids||[]).forEach(function(id){
+        if(!findMockPerson(id)) return;
+        if(action==='deleteCards' && !MOCK_TRASH[id]){ MOCK_TRASH[id] = todayStr()+' 12:00:00'; mCnt++; }
+        if(action==='restoreCards' && MOCK_TRASH[id]){ delete MOCK_TRASH[id]; mCnt++; }
+      });
+      MOCK_VER++;
+      return action==='deleteCards' ? {ok:true, data:{ deleted:mCnt, notFound:0, alreadyDeleted:0 }} : {ok:true, data:{ restored:mCnt, notFound:0 }};
+    }
+    if(action==='listTrash'){
+      return {ok:true, data:{ items: Object.keys(MOCK_TRASH).map(function(id){
+        var p = findMockPerson(id); return { id:id, n:p.card.name, c:p.card.company, t:p.card.title, deletedAt:MOCK_TRASH[id] };
+      }) }};
+    }
+    if(action==='purgeCards'){
+      var ids = body.ids||[];
+      for(var pi=0; pi<ids.length; pi++){ if(!MOCK_TRASH[ids[pi]]) return {ok:false, error:'not_in_trash', count:1}; }
+      ids.forEach(function(id){
+        delete MOCK_TRASH[id];
+        MOCK_DB.persons = MOCK_DB.persons.filter(function(p){ return p.card.id !== id; });
+      });
+      MOCK_VER++;
+      return {ok:true, data:{ purged:ids.length, historyRowsRemoved:ids.length, personRowsRemoved:ids.length, filesTrashed:0, fileErrors:0 }};
+    }
+    if(action==='searchText'){
+      var qs = String(body.q||'').split(/\s+/).filter(Boolean).map(eightNormalize);
+      var hitIds = [];
+      MOCK_DB.persons.forEach(function(p){
+        if(MOCK_TRASH[p.card.id]) return;
+        var text = eightNormalize(p.histories.map(function(h){ return (h.memo||'')+' '+(h.eventName||''); }).join(' ') + ' ' + (p.crm.memo||''));
+        if(qs.length && qs.every(function(w){ return text.indexOf(w) >= 0; })) hitIds.push(p.card.id);
+      });
+      return {ok:true, data:{ ids:hitIds, limited:false }};
     }
     if(action==='getThumbs'){ return {ok:true, data:{}}; } // モックはサムネ無し(プレースホルダーのまま)
     return {ok:false, error:'unknown_action'};
@@ -1955,13 +2121,17 @@
 </script>
 <script>
   // ==================== Eight風 一覧UI（IndexedDBキャッシュ＋listLite/listDelta/getThumbs） ====================
-  var IDB_NAME = 'meishi', IDB_VERSION = 1, IDB_LIST_KEY = 'v1';
+  // IDB_VERSION 2: 一覧に検索用キー(k/e/p/a/i/ev/tg)を追加したスキーマ。旧(v1)の一覧キャッシュは破棄して取り直す。
+  var IDB_NAME = 'meishi', IDB_VERSION = 2, IDB_LIST_KEY = 'v2', LIST_SCHEMA = 2;
   function idbOpen(){
     return new Promise(function(resolve, reject){
       if(!('indexedDB' in window)){ reject(new Error('no_indexeddb')); return; }
       var req = indexedDB.open(IDB_NAME, IDB_VERSION);
-      req.onupgradeneeded = function(){
+      req.onupgradeneeded = function(ev){
         var db = req.result;
+        if(ev.oldVersion > 0 && ev.oldVersion < 2 && db.objectStoreNames.contains('list')){
+          req.transaction.objectStore('list').clear();
+        }
         if(!db.objectStoreNames.contains('list')) db.createObjectStore('list');
         if(!db.objectStoreNames.contains('thumbs')) db.createObjectStore('thumbs');
       };
@@ -2001,24 +2171,49 @@
     }).catch(function(){});
   }
 
-  // listLite/listDelta は転送量削減のため短縮キー({id,n,c,t,d,th})で返る。ここで展開してから使う。
+  // listLite/listDelta は転送量削減のため短縮キーで返る。ここで展開してから使う。
+  //   id,n,c,t,d,th に加え k(よみ) e(メール) p(電話・数字のみ) a(都道府県+市区) i(業種) ev(イベント名) tg(タグ配列)
   function expandListItems_(arr){
     return (arr || []).map(function(it){
-      return { id: it.id, name: it.n, company: it.c, title: it.t, exchangedAt: it.d, thumbFileId: it.th };
+      return { id: it.id, name: it.n, company: it.c, title: it.t, exchangedAt: it.d, thumbFileId: it.th,
+               kana: it.k || '', email: it.e || '', tel: it.p || '', addr: it.a || '',
+               industry: it.i || '', events: it.ev || '', tags: it.tg || [] };
     });
   }
 
-  // カタカナ→ひらがな正規化＋小文字化＋空白除去（ひらがな/カタカナを同一視した部分一致用）
+  // 検索用の正規化: NFKC → 小文字化 → カタカナをひらがなに統一 → 空白・ハイフン・括弧を除去
+  // （半角/全角、ひらがな/カタカナ、電話番号のハイフン有無の揺れを吸収する）
+  var EIGHT_STRIP_RE = /[\s　()\[\]{}<>「」『』【】〔〕〈〉《》\-‐-―−－]/g;
   function eightNormalize(s){
-    s = String(s||'');
-    s = s.replace(/[ァ-ヶ]/g, function(ch){ return String.fromCharCode(ch.charCodeAt(0) - 0x60); });
-    return s.toLowerCase().replace(/[\s　]+/g, '');
+    s = String(s == null ? '' : s);
+    try { s = s.normalize('NFKC'); } catch(e){}
+    s = s.toLowerCase().replace(/[ァ-ヶ]/g, function(ch){ return String.fromCharCode(ch.charCodeAt(0) - 0x60); });
+    return s.replace(EIGHT_STRIP_RE, '');
+  }
+  // 各行の検索用文字列(_s)は読み込み時に1回だけ作る。項目ごとに正規化して空白1つで連結するので、
+  // 語が項目をまたいで誤ヒットしない。_s は非列挙なので IndexedDB には保存されない。
+  function eightIndexItem_(it){
+    var parts = [it.name, it.company, it.title, it.kana, it.email, it.addr, it.industry];
+    if(it.tel) parts = parts.concat(String(it.tel).split(' '));
+    if(it.events) parts = parts.concat(String(it.events).split(' '));
+    if(it.tags && it.tags.length) parts = parts.concat(it.tags);
+    Object.defineProperty(it, '_s', { value: parts.map(eightNormalize).join(' '), writable:true, configurable:true, enumerable:false });
+  }
+  function eightIndexItems_(items){ for(var i=0; i<items.length; i++) eightIndexItem_(items[i]); }
+  // スペース区切りの語(正規化済み)。複数語は AND 検索
+  function eightQueryWords_(q){
+    return String(q || '').split(/[\s　]+/).map(eightNormalize).filter(function(w){ return w; });
   }
 
   var eightAllItems = [];
   var eightVersion = null;
   var eightSortMode = 'exchangedAt'; // 'exchangedAt' | 'name'
   var eightKeyword = '';
+  var eightTagFilter = '';           // タグ絞り込み(キーワードと併用可)
+  var eightMemo = null;              // {q, set, count, limited} メモ・履歴検索の結果(q が現在のキーワードと一致する間だけ有効)
+  var eightMatchCount = 0;
+  var eightSelectMode = false;
+  var eightSel = {};                 // 選択中の名刺ID
   var eightRenderList = [];    // ソート・絞込・グルーピング後の描画対象（{type:'header'|'item', ...}）
   var eightRenderedCount = 0;
   var EIGHT_PAGE_SIZE = 100;
@@ -2028,29 +2223,52 @@
   var eightThumbInFlight = {};
   var eightThumbTimer = null;
 
-  // 氏名の読み順に使える列（フリガナ/かな）は名刺DBに存在しないため、「所有している名刺」は氏名順にフォールバックする
-  function eightSortedFiltered(){
-    var kw = eightNormalize(eightKeyword);
-    var items = eightAllItems;
-    if(kw){
-      items = items.filter(function(it){
-        return eightNormalize(it.name).indexOf(kw)>=0 ||
-               eightNormalize(it.company).indexOf(kw)>=0 ||
-               eightNormalize(it.title).indexOf(kw)>=0;
+  // 並び順は一覧データ/並び替えが変わった時だけ作り直し、検索の入力ごとには絞り込みだけ行う
+  var JA_COLLATOR = (typeof Intl !== 'undefined' && Intl.Collator) ? new Intl.Collator('ja') : null;
+  var eightBase = null; // {mode, list}
+  function eightInvalidate_(){ eightBase = null; }
+  function eightBaseList_(){
+    if(eightBase && eightBase.mode === eightSortMode) return eightBase.list;
+    var items = eightAllItems.slice();
+    if(eightSortMode === 'name'){
+      // 氏名の読み順に使える専用列は無いので、「所有している名刺」は氏名順
+      items.sort(function(a,b){
+        var x = String(a.name||''), y = String(b.name||'');
+        return JA_COLLATOR ? JA_COLLATOR.compare(x, y) : x.localeCompare(y, 'ja');
+      });
+    } else {
+      items.sort(function(a,b){ // 交換日順(降順)。未設定は末尾
+        var av = a.exchangedAt||'', bv = b.exchangedAt||'';
+        if(!av && !bv) return 0;
+        if(!av) return 1;
+        if(!bv) return -1;
+        return av < bv ? 1 : (av > bv ? -1 : 0);
       });
     }
-    items = items.slice();
-    if(eightSortMode==='name'){
-      items.sort(function(a,b){ return String(a.name||'').localeCompare(String(b.name||''), 'ja'); });
+    eightBase = { mode: eightSortMode, list: items };
+    return items;
+  }
+  // キーワード(AND)・タグで絞り込み。メモ・履歴検索を実行済みなら、その一致IDも合わせて表示する
+  function eightMatchItems_(){
+    var words = eightQueryWords_(eightKeyword), tag = eightTagFilter;
+    var items = eightBaseList_();
+    if(!words.length && !tag) return items;
+    var memoSet = (eightMemo && eightMemo.q === eightKeyword) ? eightMemo.set : null;
+    var n = words.length;
+    return items.filter(function(it){
+      if(tag && !(it.tags && it.tags.indexOf(tag) >= 0)) return false;
+      if(!n) return true;
+      var s = it._s || '', i = 0;
+      for(; i < n; i++){ if(s.indexOf(words[i]) < 0) break; }
+      return i === n || !!(memoSet && memoSet[it.id]);
+    });
+  }
+  function eightSortedFiltered(){
+    var items = eightMatchItems_();
+    eightMatchCount = items.length;
+    if(eightSortMode === 'name'){
       return items.map(function(it){ return { type:'item', data:it }; });
     }
-    items.sort(function(a,b){ // 交換日順(降順)。未設定は末尾
-      var av = a.exchangedAt||'', bv = b.exchangedAt||'';
-      if(!av && !bv) return 0;
-      if(!av) return 1;
-      if(!bv) return -1;
-      return av < bv ? 1 : (av > bv ? -1 : 0);
-    });
     var out = [], curLabel = null;
     items.forEach(function(it){
       var label = it.exchangedAt ? (it.exchangedAt.slice(0,4)+'年'+parseInt(it.exchangedAt.slice(5,7),10)+'月') : '日付未設定';
@@ -2062,7 +2280,10 @@
 
   function eightRowHtml(it){
     var thumbHtml = '<div class="ethumb"'+(it.thumbFileId?' data-thumb-id="'+esc(it.thumbFileId)+'"':'')+'></div>';
-    return '<div class="erow" data-id="'+esc(it.id)+'">'
+    var on = !!eightSel[it.id];
+    var chk = eightSelectMode ? '<input type="checkbox" class="echk" tabindex="-1"'+(on?' checked':'')+'>' : '';
+    return '<div class="erow'+(on?' sel':'')+'" data-id="'+esc(it.id)+'">'
+      + chk
       + '<div class="ebody">'
       + '<div class="ename">'+esc(it.name||'(氏名不明)')+'</div>'
       + (it.company?'<div class="ecompany">'+esc(it.company)+'</div>':'')
@@ -2074,11 +2295,32 @@
     eightRenderList = eightSortedFiltered();
     eightRenderedCount = 0;
     EL('eightList').innerHTML = '';
+    eightUpdateMeta_();
     if(!eightRenderList.length){
       EL('eightList').innerHTML = '<div class="eightempty"><b>該当なし</b>検索語を変えてお試しください。</div>';
       return;
     }
     eightAppendPage();
+  }
+
+  // 検索中の「◯件」・タグ絞り込みチップ・クリア(×)・「メモ・履歴も検索」の表示を更新
+  function eightUpdateMeta_(){
+    var hasKw = eightQueryWords_(eightKeyword).length > 0;
+    var active = hasKw || !!eightTagFilter;
+    EL('eightMeta').hidden = !active;
+    EL('eightClear').hidden = !EL('eightSearch').value;
+    if(active){
+      EL('eightCount').textContent = eightMatchCount + '件';
+      var tc = EL('eightTagChip');
+      tc.hidden = !eightTagFilter;
+      if(eightTagFilter){ tc.innerHTML = 'タグ: '+esc(eightTagFilter)+' <b data-x="1" aria-label="タグ解除">×</b>'; }
+    }
+    var applied = !!(eightMemo && eightMemo.q === eightKeyword);
+    EL('eightMemoRow').hidden = !hasKw;
+    EL('eightMemoBtn').hidden = applied;
+    EL('eightMemoNote').textContent = applied
+      ? ('メモ・履歴の一致 '+eightMemo.count+'件'+(eightMemo.limited?'（上限200件）':'')+'を含めて表示しています')
+      : '';
   }
 
   function eightAppendPage(){
@@ -2161,40 +2403,161 @@
 
   EL('eightList').addEventListener('click', function(e){
     var row = e.target.closest && e.target.closest('.erow');
-    if(row){ location.hash = '#person/'+row.getAttribute('data-id'); }
+    if(!row) return;
+    var id = row.getAttribute('data-id');
+    if(eightSelectMode){ eightToggleSel_(id, row); return; }
+    location.hash = '#person/'+id;
   });
 
+  // 入力は150ms debounce。クリア(×)の出し分けだけは即時に行う
   var eightSearchTimer = null;
+  function eightApplyKeyword_(v){
+    clearTimeout(eightSearchTimer);
+    eightKeyword = v;
+    eightRebuild();
+  }
   EL('eightSearch').addEventListener('input', function(){
     var v = this.value;
+    EL('eightClear').hidden = !v;
     clearTimeout(eightSearchTimer);
     eightSearchTimer = setTimeout(function(){ eightKeyword = v; eightRebuild(); }, 150);
   });
+  EL('eightSearch').addEventListener('keydown', function(e){
+    if(e.key === 'Enter' && !e.isComposing){ eightApplyKeyword_(this.value); this.blur(); }
+  });
+  EL('eightClear').addEventListener('click', function(){
+    EL('eightSearch').value = '';
+    eightApplyKeyword_('');
+    EL('eightSearch').focus();
+  });
+  EL('eightTagChip').addEventListener('click', function(e){
+    if(e.target.closest && e.target.closest('[data-x]')){ eightTagFilter = ''; eightRebuild(); }
+  });
 
-  document.querySelectorAll('.eightsortbtn').forEach(function(btn){
+  document.querySelectorAll('.eightsortbtn[data-sort]').forEach(function(btn){
     btn.addEventListener('click', function(){
-      document.querySelectorAll('.eightsortbtn').forEach(function(b){ b.classList.remove('on'); });
+      document.querySelectorAll('.eightsortbtn[data-sort]').forEach(function(b){ b.classList.remove('on'); });
       btn.classList.add('on');
       eightSortMode = btn.getAttribute('data-sort');
       eightRebuild();
     });
   });
 
-  // タグ検索は一覧のクライアント絞込ではなく、既存の検索(search action)にtag条件を渡して#searchへ遷移する
-  // （listLiteはid/name/company/title/exchangedAt/thumbFileIdの6項目のみでtagsを含まないため）
+  // タグ検索: 一覧に tg(タグ名)を持つようになったので、キーワードと併用できるクライアント側の絞り込みにする
   EL('eightTagBtn').addEventListener('click', function(){
-    var html = '<div class="modaltitle">タグで探す</div><div class="eighttaglist">'
-      + TAG_CANDIDATES.map(function(t){ return '<div class="chip" data-tag="'+esc(t)+'">'+esc(t)+'</div>'; }).join('')
-      + '</div>';
+    var counts = {};
+    eightAllItems.forEach(function(it){ (it.tags||[]).forEach(function(t){ counts[t] = (counts[t]||0) + 1; }); });
+    var names = TAG_CANDIDATES.slice();
+    Object.keys(counts).forEach(function(t){ if(names.indexOf(t) < 0) names.push(t); });
+    var html = '<div class="modaltitle">タグで絞り込む</div><div class="eighttaglist">'
+      + names.map(function(t){
+          return '<div class="chip'+(t===eightTagFilter?' on':'')+'" data-tag="'+esc(t)+'">'+esc(t)+(counts[t]?' '+counts[t]:'')+'</div>';
+        }).join('')
+      + '</div>'
+      + (eightTagFilter ? '<div class="formsave" style="padding:14px 0 0;"><button type="button" id="eightTagOff">タグの絞り込みを解除</button></div>' : '');
     openModal(html);
     EL('modalRoot').querySelectorAll('.eighttaglist .chip').forEach(function(c){
       c.addEventListener('click', function(){
+        eightTagFilter = c.getAttribute('data-tag');
         closeModal();
-        pendingSearchQuery = { tag: c.getAttribute('data-tag') };
-        location.hash = '#search';
+        eightRebuild();
       });
     });
+    var off = document.getElementById('eightTagOff');
+    if(off){ off.onclick = function(){ eightTagFilter = ''; closeModal(); eightRebuild(); }; }
   });
+
+  // メモ・履歴も検索: 本文の部分一致で見つかった名刺IDを、いまの検索結果に合わせて表示する
+  EL('eightMemoBtn').addEventListener('click', async function(){
+    var q = eightKeyword;
+    if(!eightQueryWords_(q).length) return;
+    if(!isOnline_()){ toast('オンライン時に操作してください'); return; }
+    var r;
+    try { r = await api('searchText', { q:q }, { busyMessage:'メモ・履歴を検索中…' }); }
+    catch(e){ toast('通信エラーのため検索できませんでした'); return; }
+    if(r && r.error === 'auth'){ doLogout(); return; }
+    if(!r || !r.ok){ toast('メモ・履歴の検索に失敗しました'); return; }
+    var set = {}, ids = (r.data && r.data.ids) || [];
+    ids.forEach(function(id){ set[id] = true; });
+    eightMemo = { q:q, set:set, count:ids.length, limited:!!(r.data && r.data.limited) };
+    eightRebuild();
+  });
+
+  // ---- 一覧の複数選択（削除用） ----
+  EL('eightSelBtn').addEventListener('click', function(){ eightSetSelectMode_(!eightSelectMode); });
+  function eightSelIds_(){ return Object.keys(eightSel); }
+  function eightSetSelectMode_(on){
+    eightSelectMode = !!on;
+    if(!on) eightSel = {};
+    EL('eightSelBtn').textContent = on ? '選択を終了' : '選択';
+    EL('eightSelBtn').classList.toggle('on', !!on);
+    document.body.classList.toggle('eightselmode', !!on);
+    eightUpdateSelBar_();
+    eightRebuild();
+  }
+  function eightUpdateSelBar_(){
+    EL('eightSelBar').hidden = !eightSelectMode;
+    EL('eightSelCount').textContent = eightSelIds_().length + '件選択中';
+    updateOnlineUi_();
+  }
+  function eightToggleSel_(id, row){
+    if(eightSel[id]) delete eightSel[id]; else eightSel[id] = true;
+    if(row){
+      row.classList.toggle('sel', !!eightSel[id]);
+      var cb = row.querySelector('.echk'); if(cb) cb.checked = !!eightSel[id];
+    }
+    eightUpdateSelBar_();
+  }
+  EL('eightSelAll').addEventListener('click', function(){
+    eightMatchItems_().forEach(function(it){ eightSel[it.id] = true; });
+    EL('eightList').querySelectorAll('.erow').forEach(function(row){
+      var on = !!eightSel[row.getAttribute('data-id')];
+      row.classList.toggle('sel', on);
+      var cb = row.querySelector('.echk'); if(cb) cb.checked = on;
+    });
+    eightUpdateSelBar_();
+  });
+  EL('eightSelClear').addEventListener('click', function(){
+    eightSel = {};
+    EL('eightList').querySelectorAll('.erow.sel').forEach(function(row){
+      row.classList.remove('sel');
+      var cb = row.querySelector('.echk'); if(cb) cb.checked = false;
+    });
+    eightUpdateSelBar_();
+  });
+  EL('eightSelDelete').addEventListener('click', function(){
+    var byId = {};
+    eightAllItems.forEach(function(it){ byId[it.id] = it; });
+    var targets = eightSelIds_().map(function(id){
+      var it = byId[id] || {};
+      return { id:id, name:it.name, company:it.company };
+    });
+    if(!targets.length) return;
+    // 既存の一括交換日モーダルと同じ「対象を確認 → 削除」の2段階確認
+    openDeleteModal_(targets, true, function(res){
+      eightSetSelectMode_(false);
+      showUndoToast_(res);
+    });
+  });
+  // 画面遷移で一覧(ホーム)を離れたら選択モードを抜ける
+  function eightLeaveHome_(){ if(eightSelectMode) eightSetSelectMode_(false); }
+
+  // ---- オンライン/オフライン: 書き込み系ボタンを無効化して理由を表示 ----
+  function isOnline_(){ return navigator.onLine !== false; }
+  function updateOnlineUi_(){
+    var on = isOnline_();
+    var msg = on ? '' : 'オンライン時に操作してください';
+    var del = EL('eightSelDelete'); if(del) del.disabled = !on || eightSelIds_().length === 0;
+    EL('eightSelHint').textContent = msg;
+    EL('personDeleteBtn').disabled = !on;
+    EL('personDeleteHint').textContent = msg;
+    document.querySelectorAll('[data-needs-online]').forEach(function(b){
+      b.disabled = !on || (b.hasAttribute('data-needs-sel') && trashSelIds_().length === 0);
+    });
+    EL('trashHint').textContent = msg;
+  }
+  window.addEventListener('online', updateOnlineUi_);
+  window.addEventListener('offline', updateOnlineUi_);
 
   function eightSetHeaderVars(){
     try {
@@ -2206,20 +2569,43 @@
   }
   window.addEventListener('resize', eightSetHeaderVars);
 
+  // 一覧データ(サーバー応答)を取り込む。deletedIds が来たら、他の端末で削除された名刺をキャッシュから確実に消す
+  function eightApplyServerData_(data){
+    var items = expandListItems_(data.items);
+    if(data.deletedIds && data.deletedIds.length){
+      var gone = {}; data.deletedIds.forEach(function(id){ gone[id] = true; });
+      items = items.filter(function(it){ return !gone[it.id]; });
+    }
+    eightIndexItems_(items);
+    eightAllItems = items; eightVersion = data.version;
+    eightInvalidate_();
+    eightPersist_();
+  }
+  function eightPersist_(){
+    idbSet('list', IDB_LIST_KEY, { schema:LIST_SCHEMA, version:eightVersion, items:eightAllItems }).catch(function(){});
+  }
+  // 復元などで一覧を取り直したい時（起動時の listDelta とは別。起動時の呼び出し回数は増やさない）
+  async function eightReloadFromServer(){
+    try {
+      var r = await api('listLite', {}, { silent:true });
+      if(r && r.ok && r.data){ eightApplyServerData_(r.data); eightRebuild(); }
+    } catch(e){}
+  }
+
   // 起動時: IndexedDBキャッシュがあれば即描画→裏でlistDelta(sinceVersion)。無ければスピナー→listLite。
   async function initEightList(){
     eightSetHeaderVars();
     var cached = null;
     try { cached = await idbGet('list', IDB_LIST_KEY); } catch(e){}
-    if(cached && cached.items && cached.items.length){
+    if(cached && cached.schema === LIST_SCHEMA && cached.items && cached.items.length){
       eightAllItems = cached.items; eightVersion = cached.version;
+      eightIndexItems_(eightAllItems); eightInvalidate_();
       eightRebuild();
       eightSetHeaderVars();
       try {
         var d = await api('listDelta', { sinceVersion: eightVersion }, { silent:true });
         if(d && d.ok && d.data && d.data.changed){
-          eightAllItems = expandListItems_(d.data.items); eightVersion = d.data.version;
-          idbSet('list', IDB_LIST_KEY, { version:eightVersion, items:eightAllItems }).catch(function(){});
+          eightApplyServerData_(d.data);
           eightRebuild();
         } else if(d && d.error==='auth'){ doLogout(); }
       } catch(e){}
@@ -2229,8 +2615,7 @@
     try {
       var r = await api('listLite', {}, { busyMessage:'一覧を取得中…' });
       if(r && r.ok && r.data){
-        eightAllItems = expandListItems_(r.data.items); eightVersion = r.data.version;
-        idbSet('list', IDB_LIST_KEY, { version:eightVersion, items:eightAllItems }).catch(function(){});
+        eightApplyServerData_(r.data);
         eightRebuild();
         eightSetHeaderVars();
       } else if(r && r.error==='auth'){ doLogout(); }
@@ -2238,6 +2623,227 @@
     } catch(e){
       EL('eightList').innerHTML = '<div class="eightempty"><b>通信エラー</b></div>';
     }
+  }
+
+  // ==================== 削除（ゴミ箱方式）====================
+  // 一覧キャッシュから取り除く。undo 用に取り除いた行を返す
+  function eightRemoveLocal_(ids){
+    var set = {};
+    ids.forEach(function(id){ set[id] = true; delete eightSel[id]; });
+    var removed = [], keep = [];
+    eightAllItems.forEach(function(it){ (set[it.id] ? removed : keep).push(it); });
+    eightAllItems = keep;
+    eightInvalidate_(); eightPersist_(); eightRebuild();
+    return { ids:ids, items:removed };
+  }
+  function eightRestoreLocal_(res){
+    var have = {};
+    eightAllItems.forEach(function(it){ have[it.id] = true; });
+    res.items.forEach(function(it){ if(!have[it.id]) eightAllItems.push(it); });
+    eightInvalidate_(); eightPersist_(); eightRebuild();
+    if(res.items.length < res.ids.length){ eightReloadFromServer(); } // 手元に無かった行は取り直す
+  }
+  async function doDeleteCards_(ids){
+    var r;
+    try { r = await api('deleteCards', { ids:ids }, { busyMessage: ids.length+'件を削除しています…' }); }
+    catch(e){ toast('通信エラーのため削除できませんでした'); return null; }
+    if(r && r.error === 'auth'){ doLogout(); return null; }
+    if(!r || !r.ok){ toast('削除に失敗しました'); return null; }
+    BOOT_NEWCARDS = null;
+    return eightRemoveLocal_(ids);
+  }
+  function showUndoToast_(res){
+    toastAction('削除しました'+(res.ids.length>1?'（'+res.ids.length+'件）':''), '元に戻す', async function(){
+      var r;
+      try { r = await api('restoreCards', { ids:res.ids }, { busyMessage:'元に戻しています…' }); }
+      catch(e){ toast('通信エラーのため元に戻せませんでした'); return; }
+      if(r && r.error === 'auth'){ doLogout(); return; }
+      if(!r || !r.ok){ toast('元に戻せませんでした'); return; }
+      BOOT_NEWCARDS = null;
+      eightRestoreLocal_(res);
+      toast('元に戻しました');
+    }, 5000);
+  }
+  function targetListHtml_(targets){
+    return targets.slice(0, 10).map(function(t){
+      return '<div class="delrow"><b>'+esc(t.name||'(氏名不明)')+'</b>'+(t.company?'<span>'+esc(t.company)+'</span>':'')+'</div>';
+    }).join('') + (targets.length > 10 ? '<div class="delrow dim">ほか '+(targets.length-10)+'件</div>' : '');
+  }
+  // targets: [{id,name,company}]。twoStep=true は「対象を確認 → 削除」の2段階（一括削除用）
+  var deleting_ = false;
+  function openDeleteModal_(targets, twoStep, afterFn){
+    if(!isOnline_()){ toast('オンライン時に操作してください'); return; }
+    var single = targets.length === 1;
+    var html = '<div class="modaltitle">'+(single ? 'この名刺を削除しますか？' : targets.length+'件の名刺を削除')+'</div>'
+      + '<div class="previewbox" id="delPreview">'+(twoStep ? '「対象を確認」を押してください' : targetListHtml_(targets))+'</div>'
+      + '<div class="dimtext" style="margin-top:10px;">削除した名刺は一覧から消え、設定のゴミ箱から元に戻せます。</div>'
+      + '<div class="formsave" style="padding:14px 0 0;">'
+      + '<button type="button" id="delCancelBtn">キャンセル</button>'
+      + (twoStep ? '<button type="button" id="delPreviewBtn">対象を確認</button>' : '')
+      + '<button type="button" class="primary dangerbtn" id="delApplyBtn"'+(twoStep ? ' disabled' : '')+'>削除</button>'
+      + '</div>';
+    openModal(html);
+    deleting_ = false;
+    document.getElementById('delCancelBtn').onclick = closeModal;
+    if(twoStep){
+      document.getElementById('delPreviewBtn').onclick = function(){
+        document.getElementById('delPreview').innerHTML = '<b>'+targets.length+'件</b>をゴミ箱へ移します'+targetListHtml_(targets);
+        document.getElementById('delApplyBtn').disabled = false;
+      };
+    }
+    document.getElementById('delApplyBtn').onclick = async function(){
+      if(deleting_) return;
+      deleting_ = true;
+      var res = await doDeleteCards_(targets.map(function(t){ return t.id; }));
+      deleting_ = false;
+      if(res){ closeModal(); if(afterFn) afterFn(res); }
+    };
+  }
+
+  // 詳細画面の「この名刺を削除」
+  EL('personDeleteBtn').addEventListener('click', function(){
+    var id = CURRENT_PERSON_ID;
+    if(!id) return;
+    var info = CURRENT_PERSON_INFO || {};
+    openDeleteModal_([{ id:id, name:info.name, company:info.company }], false, function(res){
+      showUndoToast_(res);
+      if(window.history.length > 1){ window.history.back(); } else { location.hash = '#home'; }
+    });
+  });
+
+  // ==================== 設定 > ゴミ箱 ====================
+  var trashItems = [];
+  var trashSel = {};
+  function trashSelIds_(){ return Object.keys(trashSel); }
+  function initSettingsView(){
+    updateOnlineUi_();
+    loadTrash_();
+  }
+  async function loadTrash_(){
+    EL('trashList').innerHTML = '<div class="spin">読み込み中…</div>';
+    EL('trashBar').hidden = true;
+    var r;
+    try { r = await api('listTrash', {}, { busyMessage:'ゴミ箱を取得中…' }); }
+    catch(e){ EL('trashList').innerHTML = '<div class="eightempty"><b>通信エラー</b></div>'; return; }
+    if(r && r.error === 'auth'){ doLogout(); return; }
+    if(!r || !r.ok){ EL('trashList').innerHTML = '<div class="eightempty"><b>取得できませんでした</b></div>'; return; }
+    trashItems = r.data.items || [];
+    trashSel = {};
+    renderTrash_();
+  }
+  function renderTrash_(){
+    EL('trashBar').hidden = !trashItems.length;
+    if(!trashItems.length){
+      EL('trashList').innerHTML = '<div class="eightempty"><b>ゴミ箱は空です</b>削除した名刺はここに入ります。</div>';
+      updateOnlineUi_();
+      return;
+    }
+    EL('trashList').innerHTML = trashItems.map(function(it){
+      var when = String(it.deletedAt||'').replace(/-/g,'/').slice(0,16);
+      return '<div class="trashrow" data-id="'+esc(it.id)+'">'
+        + '<input type="checkbox" class="tchk" data-id="'+esc(it.id)+'"'+(trashSel[it.id]?' checked':'')+'>'
+        + '<div class="ebody"><div class="ename">'+esc(it.n||'(氏名不明)')+'</div>'
+        + (it.c?'<div class="ecompany">'+esc(it.c)+'</div>':'')
+        + '<div class="etitle">削除: '+esc(when)+'</div></div>'
+        + '<div class="tbtns">'
+        + '<button type="button" class="tbtn" data-act="restore" data-id="'+esc(it.id)+'" data-needs-online>復元</button>'
+        + '<button type="button" class="tbtn danger" data-act="purge" data-id="'+esc(it.id)+'" data-needs-online>完全削除</button>'
+        + '</div></div>';
+    }).join('');
+    EL('trashCount').textContent = trashSelIds_().length + '件選択中（全'+trashItems.length+'件）';
+    updateOnlineUi_();
+  }
+  EL('trashList').addEventListener('change', function(e){
+    var cb = e.target;
+    if(!cb.classList || !cb.classList.contains('tchk')) return;
+    var id = cb.getAttribute('data-id');
+    if(cb.checked) trashSel[id] = true; else delete trashSel[id];
+    EL('trashCount').textContent = trashSelIds_().length + '件選択中（全'+trashItems.length+'件）';
+    updateOnlineUi_();
+  });
+  EL('view-settings').addEventListener('click', function(e){
+    var btn = e.target.closest && e.target.closest('button[data-act]');
+    if(!btn || btn.disabled) return;
+    var act = btn.getAttribute('data-act'), id = btn.getAttribute('data-id');
+    if(act === 'selAll'){
+      var all = trashSelIds_().length === trashItems.length;
+      trashSel = {};
+      if(!all) trashItems.forEach(function(it){ trashSel[it.id] = true; });
+      renderTrash_();
+      return;
+    }
+    var ids = id ? [id] : trashSelIds_();
+    if(!ids.length) return;
+    if(act === 'restore') runRestore_(ids);
+    else if(act === 'purge') openPurgeModal_(ids);
+  });
+  async function runRestore_(ids){
+    if(!isOnline_()){ toast('オンライン時に操作してください'); return; }
+    var r;
+    try { r = await api('restoreCards', { ids:ids }, { busyMessage: ids.length+'件を復元しています…' }); }
+    catch(e){ toast('通信エラーのため復元できませんでした'); return; }
+    if(r && r.error === 'auth'){ doLogout(); return; }
+    if(!r || !r.ok){ toast('復元に失敗しました'); return; }
+    var set = {}; ids.forEach(function(i){ set[i] = true; delete trashSel[i]; });
+    trashItems = trashItems.filter(function(it){ return !set[it.id]; });
+    renderTrash_();
+    BOOT_NEWCARDS = null;
+    toast(r.data.restored + '件を復元しました');
+    eightReloadFromServer(); // 復元した名刺を一覧キャッシュへ戻す
+  }
+  // 完全削除は「元に戻せません」を明記した2段階確認
+  function openPurgeModal_(ids){
+    if(!isOnline_()){ toast('オンライン時に操作してください'); return; }
+    var byId = {};
+    trashItems.forEach(function(it){ byId[it.id] = { id:it.id, name:it.n, company:it.c }; });
+    var targets = ids.map(function(id){ return byId[id]; }).filter(Boolean);
+    if(!targets.length) return;
+    openModal('<div class="modaltitle">完全に削除しますか？（1/2）</div>'
+      + '<div class="previewbox">'+targets.length+'件'+targetListHtml_(targets)+'</div>'
+      + '<div class="confirmbox"><b>完全削除は元に戻せません。</b></div>'
+      + '<div class="formsave" style="padding:14px 0 0;">'
+      + '<button type="button" id="purgeCancel">キャンセル</button>'
+      + '<button type="button" class="primary dangerbtn" id="purgeNext">次へ</button></div>');
+    document.getElementById('purgeCancel').onclick = closeModal;
+    document.getElementById('purgeNext').onclick = function(){
+      openModal('<div class="modaltitle">最終確認（2/2）</div>'
+        + '<div class="confirmbox">'+targets.length+'件を完全に削除します。<br>'
+        + '・スプレッドシートの名刺・人物・接触履歴の行が削除されます<br>'
+        + '・名刺画像は Drive のゴミ箱に移ります（30日間は Drive から復元可能）<br>'
+        + '<b>この操作は元に戻せません。</b></div>'
+        + '<div class="formsave" style="padding:14px 0 0;">'
+        + '<button type="button" id="purgeBack">戻る</button>'
+        + '<button type="button" class="primary dangerbtn" id="purgeGo">完全に削除する</button></div>');
+      document.getElementById('purgeBack').onclick = closeModal;
+      var going = false;
+      document.getElementById('purgeGo').onclick = function(){
+        if(going) return;
+        going = true;
+        runPurge_(targets.map(function(t){ return t.id; }));
+      };
+    };
+  }
+  async function runPurge_(ids){
+    var done = 0, hist = 0, files = 0, person = 0, failed = false, chunkSize = 30;
+    showBusy('完全に削除しています… 0/'+ids.length);
+    try {
+      for(var i = 0; i < ids.length; i += chunkSize){
+        var chunk = ids.slice(i, i + chunkSize);
+        var r = await api('purgeCards', { ids:chunk }, { silent:true });
+        if(r && r.error === 'auth'){ hideBusy(); doLogout(); return; }
+        if(r && r.error === 'backup_failed'){ hideBusy(); closeModal(); renderTrash_(); toast('バックアップに失敗したため完全削除を中止しました'); return; }
+        if(!r || !r.ok){ failed = true; break; }
+        done += r.data.purged; hist += r.data.historyRowsRemoved; files += r.data.filesTrashed; person += r.data.personRowsRemoved;
+        var gone = {}; chunk.forEach(function(id){ gone[id] = true; delete trashSel[id]; });
+        trashItems = trashItems.filter(function(it){ return !gone[it.id]; });
+        EL('busyMsg').textContent = '完全に削除しています… '+done+'/'+ids.length;
+      }
+    } catch(e){ failed = true; }
+    hideBusy();
+    closeModal();
+    renderTrash_();
+    BOOT_NEWCARDS = null;
+    toast((failed ? '一部失敗しました。' : '') + '完全削除 '+done+'件（履歴 '+hist+'行・人物レコード '+person+'件を削除／画像 '+files+'件をDriveのゴミ箱へ）');
   }
 </script>
 </body>
