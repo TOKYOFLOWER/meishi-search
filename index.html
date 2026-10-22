@@ -551,7 +551,7 @@
   <!-- 設定 -->
   <section data-view="settings" id="view-settings" hidden>
     <div class="heading">ゴミ箱</div>
-    <div class="trashnote">削除した名刺はここから復元できます。「完全削除」するとスプレッドシートの行と接触履歴が消えます（名刺画像は Drive のゴミ箱に移り、30日間は Drive から復元できます）。</div>
+    <div class="trashnote">削除した名刺はここから復元できます。「完全削除」するとスプレッドシートの名刺・人物・接触履歴の行が消えます（名刺画像は Drive のゴミ箱に移り、30日間は Drive から復元できます）。</div>
     <div class="trashhint" id="trashHint"></div>
     <div class="trashbar" id="trashBar" hidden>
       <span class="selcount" id="trashCount">0件選択中</span>
@@ -2103,7 +2103,7 @@
         MOCK_DB.persons = MOCK_DB.persons.filter(function(p){ return p.card.id !== id; });
       });
       MOCK_VER++;
-      return {ok:true, data:{ purged:ids.length, historyRowsRemoved:0, filesTrashed:0, fileErrors:0, orphanPersons:0 }};
+      return {ok:true, data:{ purged:ids.length, historyRowsRemoved:ids.length, personRowsRemoved:ids.length, filesTrashed:0, fileErrors:0 }};
     }
     if(action==='searchText'){
       var qs = String(body.q||'').split(/\s+/).filter(Boolean).map(eightNormalize);
@@ -2808,7 +2808,7 @@
     document.getElementById('purgeNext').onclick = function(){
       openModal('<div class="modaltitle">最終確認（2/2）</div>'
         + '<div class="confirmbox">'+targets.length+'件を完全に削除します。<br>'
-        + '・スプレッドシートの行と接触履歴が削除されます<br>'
+        + '・スプレッドシートの名刺・人物・接触履歴の行が削除されます<br>'
         + '・名刺画像は Drive のゴミ箱に移ります（30日間は Drive から復元可能）<br>'
         + '<b>この操作は元に戻せません。</b></div>'
         + '<div class="formsave" style="padding:14px 0 0;">'
@@ -2824,7 +2824,7 @@
     };
   }
   async function runPurge_(ids){
-    var done = 0, hist = 0, files = 0, orphan = 0, failed = false, chunkSize = 30;
+    var done = 0, hist = 0, files = 0, person = 0, failed = false, chunkSize = 30;
     showBusy('完全に削除しています… 0/'+ids.length);
     try {
       for(var i = 0; i < ids.length; i += chunkSize){
@@ -2832,7 +2832,7 @@
         var r = await api('purgeCards', { ids:chunk }, { silent:true });
         if(r && r.error === 'auth'){ hideBusy(); doLogout(); return; }
         if(!r || !r.ok){ failed = true; break; }
-        done += r.data.purged; hist += r.data.historyRowsRemoved; files += r.data.filesTrashed; orphan += r.data.orphanPersons;
+        done += r.data.purged; hist += r.data.historyRowsRemoved; files += r.data.filesTrashed; person += r.data.personRowsRemoved;
         var gone = {}; chunk.forEach(function(id){ gone[id] = true; delete trashSel[id]; });
         trashItems = trashItems.filter(function(it){ return !gone[it.id]; });
         EL('busyMsg').textContent = '完全に削除しています… '+done+'/'+ids.length;
@@ -2842,8 +2842,7 @@
     closeModal();
     renderTrash_();
     BOOT_NEWCARDS = null;
-    toast((failed ? '一部失敗しました。' : '') + '完全削除 '+done+'件（履歴 '+hist+'行・画像 '+files+'件をDriveのゴミ箱へ）'
-      + (orphan ? '／人物レコードが残る名刺 '+orphan+'件' : ''));
+    toast((failed ? '一部失敗しました。' : '') + '完全削除 '+done+'件（履歴 '+hist+'行・人物レコード '+person+'件を削除／画像 '+files+'件をDriveのゴミ箱へ）');
   }
 </script>
 </body>

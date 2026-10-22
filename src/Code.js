@@ -2723,7 +2723,7 @@ function listTrash_(body) {
 }
 // ゴミ箱内(deletedAt あり)の行だけを対象にする。1件でもゴミ箱外のIDが混ざっていれば全体を拒否する。
 // 名刺DBの行を削除、Drive の画像/サムネは setTrashed(true)（Driveのゴミ箱に30日残る）、
-// 接触履歴の該当行を削除。人物管理は触らず、人物レコードを持っていた件数だけ返す。
+// 接触履歴・人物管理の該当行（contactId がゴミ箱内の名刺のもの）を削除する。
 function purgeCards_(body) {
   var ids = idsFromBody_(body, 0);
   if (!ids.length) return { ok: false, error: 'missing_ids' };
@@ -2754,13 +2754,6 @@ function purgeCards_(body) {
     var missing = ids.filter(function (x) { return !foundIds[x]; });
     if (missing.length) return { ok: false, error: 'not_in_trash', count: missing.length };
 
-    // 人物レコードが残る件数（名刺が0枚になった人物。人物管理自体は触らない）
-    var orphanPersons = 0;
-    try {
-      var pd = readSheet_(PERSON_SHEET);
-      pd.rows.forEach(function (r) { if (foundIds[String(r[pd.c['contactId']])]) orphanPersons++; });
-    } catch (e) { /* 人物管理なし */ }
-
     // 1) 接触履歴の行を削除（下から）
     var histRemoved = 0;
     var hsh = ss_().getSheetByName(HISTORY_SHEET);
@@ -2774,10 +2767,23 @@ function purgeCards_(body) {
       deleteRowsDesc_(hsh, hrows);
     }
 
-    // 2) 名刺DBの行を削除（下から）
+    // 2) 人物管理の行を削除（名刺と contactId で1対1。ゴミ箱内の名刺に紐づく行だけ）
+    var personRemoved = 0;
+    var psh = ss_().getSheetByName(PERSON_SHEET);
+    if (psh && psh.getLastRow() >= 2) {
+      var ph = psh.getRange(1, 1, 1, psh.getLastColumn()).getValues()[0];
+      var pci = colIndex_(ph)['contactId'];
+      var pv = psh.getRange(2, pci + 1, psh.getLastRow() - 1, 1).getValues();
+      var prows = [];
+      for (var k = 0; k < pv.length; k++) { if (foundIds[String(pv[k][0])]) prows.push(k + 2); }
+      personRemoved = prows.length;
+      deleteRowsDesc_(psh, prows);
+    }
+
+    // 3) 名刺DBの行を削除（下から）
     deleteRowsDesc_(sh, targets.map(function (t) { return t.row; }));
 
-    // 3) Drive の画像・サムネをゴミ箱へ（行削除後。失敗しても処理は継続）
+    // 4) Drive の画像・サムネをゴミ箱へ（行削除後。失敗しても処理は継続）
     var filesTrashed = 0, fileErrors = 0;
     targets.forEach(function (t) {
       t.files.forEach(function (fid) {
@@ -2787,7 +2793,7 @@ function purgeCards_(body) {
     });
     invalidateBootstrapCache_();
     return { ok: true, data: { purged: targets.length, historyRowsRemoved: histRemoved,
-      filesTrashed: filesTrashed, fileErrors: fileErrors, orphanPersons: orphanPersons } };
+      personRowsRemoved: personRemoved, filesTrashed: filesTrashed, fileErrors: fileErrors } };
   } finally { lock.releaseLock(); }
 }
 // 行番号の配列（1始まり）を、連続する範囲ごとにまとめて下から削除する
