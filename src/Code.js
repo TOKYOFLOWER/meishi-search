@@ -663,6 +663,95 @@ function normKey_() {
   return s.toLowerCase();
 }
 
+/* === 重複候補（取込時に既存行と「似ている」ものへタグを付ける。登録自体は止めない） === */
+var DUP_TAG = '重複候補';
+// 異体字を代表字へ寄せる（髙/高 など）。姓名の1字違い判定の前に適用する
+var VARIANT_MAP_ = { '髙': '高', '﨑': '崎', '德': '徳', '邊': '辺', '邉': '辺', '澤': '沢', '濱': '浜', '齋': '斎', '齊': '斎',
+  '櫻': '桜', '嶋': '島', '國': '国', '廣': '広', '兒': '児', '龍': '竜', '惠': '恵', '眞': '真', '槇': '槙', '渕': '淵', '髮': '髪' };
+function normNameVariant_(s) {
+  s = normKey_(s);
+  return s.replace(/[髙﨑德邊邉澤濱齋齊櫻嶋國廣兒龍惠眞槇渕髮]/g, function (ch) { return VARIANT_MAP_[ch] || ch; });
+}
+function splitSeiMei_(name, sei, mei) {
+  sei = String(sei || '').trim(); mei = String(mei || '').trim();
+  if (!sei && !mei) {
+    var parts = String(name || '').trim().split(/[\s　]+/).filter(function (x) { return x !== ''; });
+    sei = parts.length ? parts[0] : '';
+    mei = parts.length > 1 ? parts.slice(1).join(' ') : '';
+  }
+  return { sei: normNameVariant_(sei), mei: normNameVariant_(mei) };
+}
+function digitsOnly_(v) { return String(v || '').replace(/\D/g, ''); }
+
+// 索引（メール / 電話 / 姓）。rows は readAll_().rows、c は colIndex_。行番号はシート上の行(添字+2)
+function buildDupIndex_(rows, c) {
+  var idx = { email: {}, tel: {}, sei: {}, info: {} };
+  var add = function (map, key, rowNum) { if (!key) return; (map[key] = map[key] || []).push(rowNum); };
+  rows.forEach(function (r, i) {
+    var rowNum = i + 2;
+    var sm = splitSeiMei_(r[c['氏名']], r[c['姓']], r[c['名']]);
+    idx.info[rowNum] = { name: String(r[c['氏名']] || '').trim(), id: String(r[c['id']] || ''), sei: sm.sei, mei: sm.mei };
+    add(idx.email, normKey_(r[c['メール']]), rowNum);
+    [r[c['会社TEL']], r[c['携帯']]].forEach(function (t) { var d = digitsOnly_(t); if (d.length >= 6) add(idx.tel, d, rowNum); });
+    add(idx.sei, sm.sei, rowNum);
+  });
+  return idx;
+}
+
+// (a)メール一致 (b)TEL/携帯一致 (c)姓一致かつ名が同字数で相違1字以下(名2字以上のとき。0字相違=表記ゆれのみ)
+// 戻り値: [{row, name, reasons:[...]}]（自分自身 selfRow は除く）
+function findDupCandidates_(rec, idx, selfRow) {
+  var found = {};
+  var hit = function (rowNum, reason) {
+    if (rowNum === selfRow) return;
+    var f = found[rowNum] || (found[rowNum] = { row: rowNum, name: idx.info[rowNum].name, reasons: [] });
+    if (f.reasons.indexOf(reason) < 0) f.reasons.push(reason);
+  };
+  var em = normKey_(rec.email);
+  if (em && idx.email[em]) idx.email[em].forEach(function (n) { hit(n, 'メール'); });
+  [rec.tel, rec.mobile].forEach(function (t) {
+    var d = digitsOnly_(t);
+    if (d.length >= 6 && idx.tel[d]) idx.tel[d].forEach(function (n) { hit(n, '電話'); });
+  });
+  var sm = splitSeiMei_(rec.name, rec.sei, rec.mei);
+  if (sm.sei && idx.sei[sm.sei]) {
+    idx.sei[sm.sei].forEach(function (n) {
+      var o = idx.info[n];
+      if (o.mei.length !== sm.mei.length) return;
+      var diff = 0;
+      for (var i = 0; i < sm.mei.length; i++) if (sm.mei.charAt(i) !== o.mei.charAt(i)) diff++;
+      if (diff === 0 || (diff === 1 && sm.mei.length >= 2)) hit(n, diff === 0 ? '同姓同名(表記ゆれ)' : '姓同一・名1字違い');
+    });
+  }
+  return Object.keys(found).map(function (k) { return found[k]; }).sort(function (a, b) { return a.row - b.row; });
+}
+
+// 人物管理に「重複候補」タグ＋メモ追記（ロックは呼び出し側で取得済み前提。冪等）
+function addDupTagToPerson_(personD, pIdxMap, contactId, candidates, nextNewRowRef) {
+  var header = personD.header, rec = {}, rowNum;
+  var stamp = nowStamp_();
+  if (pIdxMap.hasOwnProperty(contactId)) {
+    header.forEach(function (h, i2) { rec[h] = personD.rows[pIdxMap[contactId]][i2]; });
+    rowNum = pIdxMap[contactId] + 2;
+  } else {
+    header.forEach(function (h) { rec[h] = ''; });
+    rec.contactId = contactId; rec.organized = false; rec.createdAt = stamp;
+    rowNum = nextNewRowRef.n++;
+  }
+  var tags = parseTags_(rec.tags);
+  var memo = String(rec.memo == null ? '' : rec.memo);
+  var changed = false;
+  if (tags.indexOf(DUP_TAG) < 0) { tags.push(DUP_TAG); rec.tags = normalizeTags_(tags.join(',')); changed = true; }
+  candidates.forEach(function (cand) {
+    var line = DUP_TAG + ': 行' + cand.row + ' ' + cand.name;
+    if (memo.indexOf(line) < 0) { memo += (memo ? '\n' : '') + line; changed = true; }
+  });
+  if (!changed) return false;
+  rec.memo = memo; rec.updatedAt = stamp;
+  writeSheetRow_(personD.sheet, header, rowNum, rec, personDateFields_());
+  return true;
+}
+
 // 会社名なし名刺の重複判定。戻り値: 既存行の添字(rows内) / 見つからなければ undefined
 function findNoCompanyDup_(rows, c, nameKey, email, tels) {
   var digits = function (v) { return String(v || '').replace(/\D/g, ''); };
@@ -823,14 +912,26 @@ function addCardToSheet(card) {
     });
 
     var newRowNum = sh.getLastRow() + 1;
+    // 重複候補の判定は追記前の既存行に対して行う（索引でO(行数)。失敗しても登録は継続）
+    var dupCands = [];
+    try { dupCands = findDupCandidates_({ name: name, sei: sei, mei: mei, email: email, tel: tel, mobile: mobile }, buildDupIndex_(d.rows, c), -1); }
+    catch (e) { Logger.log('addCard: 重複候補の判定に失敗（登録は継続）: ' + e); }
     sh.getRange(newRowNum, 1, 1, row.length).setValues([row]);
+    if (dupCands.length) {
+      try {
+        setupSnsBulkColumns_();
+        var pd = readSheet_(PERSON_SHEET), pm = {};
+        pd.rows.forEach(function (r, i) { pm[String(r[pd.c['contactId']])] = i; });
+        addDupTagToPerson_(pd, pm, newId, dupCands, { n: pd.sheet.getLastRow() + 1 });
+      } catch (e) { Logger.log('addCard: 重複候補タグの付与に失敗（登録は継続）: ' + newId + ' ' + e); }
+    }
     invalidateBootstrapCache_();
     var imageIds = null;
     if (card.images) {
       try { imageIds = saveCardImages_(newId, card.images); }
       catch (e) { Logger.log('addCard: 画像保存に失敗（登録は継続）: ' + newId + ' ' + e); }
     }
-    return { ok: true, duplicate: false, row: newRowNum, id: newId, images: imageIds };
+    return { ok: true, duplicate: false, row: newRowNum, id: newId, images: imageIds, dupCandidates: dupCands.length ? dupCands : undefined };
   } finally {
     lock.releaseLock();
   }
@@ -902,6 +1003,45 @@ function test_addCard_() {
     checks.push({ name: 'nc_dup_name_only', ok: !!(n5.ok && n5.duplicate), detail: JSON.stringify(n5) });
     if (n5.ok && !n5.duplicate) createdIds.push(n5.id);
   }
+  // --- 重複候補タグ: (a)メール (b)電話 (c)姓同一・名1字違い(異体字含む) と「別人には付かない」 ---
+  var dupIds = [];
+  var dupTagsOf = function (id) {
+    var pd = readSheet_(PERSON_SHEET), i = findRowByContactId_(pd, id);
+    return i < 0 ? '' : String(pd.rows[i][pd.c['tags']] || '');
+  };
+  var dupMemoOf = function (id) {
+    var pd = readSheet_(PERSON_SHEET), i = findRowByContactId_(pd, id);
+    return i < 0 ? '' : String(pd.rows[i][pd.c['memo']] || '');
+  };
+  var base = addCardToSheet({ company: '甲社', name: '重複試験 太郎', email: 'dupbase@example.com', tel: '03-1111-2222', mobile: '', source_file: '_dup0.png' });
+  if (base.ok && !base.duplicate) {
+    dupIds.push(base.id);
+    checks.push({ name: 'dup_base_no_tag', ok: dupTagsOf(base.id).indexOf('重複候補') < 0, detail: dupTagsOf(base.id) });
+    var ta = addCardToSheet({ company: '乙社', name: '全然違う 花', email: 'DUPBASE@example.com', source_file: '_dupa.png' }); // (a) メール一致
+    if (ta.ok && !ta.duplicate) dupIds.push(ta.id);
+    checks.push({ name: 'dup_a_email', ok: !!(ta.ok && !ta.duplicate && dupTagsOf(ta.id).indexOf('重複候補') >= 0 && dupMemoOf(ta.id).indexOf('重複候補: 行' + base.row + ' 重複試験 太郎') >= 0), detail: dupTagsOf(ta.id) + ' | ' + dupMemoOf(ta.id) });
+    var tb = addCardToSheet({ company: '丙社', name: '別名 次郎', mobile: '03(1111)2222', source_file: '_dupb.png' }); // (b) 電話一致(数字のみ)
+    if (tb.ok && !tb.duplicate) dupIds.push(tb.id);
+    checks.push({ name: 'dup_b_tel', ok: !!(tb.ok && dupTagsOf(tb.id).indexOf('重複候補') >= 0), detail: dupTagsOf(tb.id) });
+    var tc = addCardToSheet({ company: '丁社', name: '重複試験 太朗', source_file: '_dupc.png' }); // (c) 姓同一・名1字違い
+    if (tc.ok && !tc.duplicate) dupIds.push(tc.id);
+    checks.push({ name: 'dup_c_one_char', ok: !!(tc.ok && dupTagsOf(tc.id).indexOf('重複候補') >= 0), detail: dupTagsOf(tc.id) });
+    var tv1 = addCardToSheet({ company: '戊社', name: '髙橋 重複子', source_file: '_dupv1.png' });
+    if (tv1.ok && !tv1.duplicate) dupIds.push(tv1.id);
+    var tv2 = addCardToSheet({ company: '己社', name: '高橋 重複子', source_file: '_dupv2.png' }); // 異体字は同一扱い
+    if (tv2.ok && !tv2.duplicate) dupIds.push(tv2.id);
+    checks.push({ name: 'dup_c_variant', ok: !!(tv2.ok && dupTagsOf(tv2.id).indexOf('重複候補') >= 0), detail: dupTagsOf(tv2.id) });
+    var tn1 = addCardToSheet({ company: '庚社', name: '重複試験 花子', source_file: '_dupn1.png' }); // 名2字違い → 別人
+    if (tn1.ok && !tn1.duplicate) dupIds.push(tn1.id);
+    checks.push({ name: 'dup_other_person_no_tag', ok: !!(tn1.ok && dupTagsOf(tn1.id).indexOf('重複候補') < 0), detail: dupTagsOf(tn1.id) });
+    var tn2 = addCardToSheet({ company: '辛社', name: '別姓 太郎', email: 'someone@example.com', tel: '06-9999-8888', source_file: '_dupn2.png' }); // 姓違い・連絡先違い
+    if (tn2.ok && !tn2.duplicate) dupIds.push(tn2.id);
+    checks.push({ name: 'dup_other_person_no_tag2', ok: !!(tn2.ok && dupTagsOf(tn2.id).indexOf('重複候補') < 0), detail: dupTagsOf(tn2.id) });
+  } else {
+    checks.push({ name: 'dup_base_added', ok: false, detail: JSON.stringify(base) });
+  }
+  if (dupIds.length) { deleteTestRows_(dupIds); Logger.log('削除(重複候補テスト): ' + dupIds.join(',')); }
+
   var n6 = addCardToSheet({ company: 'テスト株式会社', name: '' });
   checks.push({ name: 'name_empty_rejected', ok: !!(n6 && n6.ok === false && n6.error === 'missing_required'), detail: JSON.stringify(n6) });
   if (createdIds.length) {
