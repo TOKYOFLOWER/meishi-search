@@ -131,6 +131,7 @@
         cursor:pointer;}
   .erow:active{background:var(--paper);}
   .erow .ebody{flex:1; min-width:0;}
+  .enick{font-size:13px; font-weight:400; color:var(--muted); margin-left:4px;}
   .ename{font-size:17px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .ecompany{font-size:13px; color:var(--text); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .etitle{font-size:12px; color:var(--muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -196,6 +197,14 @@
   .personhead{padding:10px 16px 12px; border-bottom:1px solid var(--line); background:#fff;}
   .personhead .name3{font-size:18px; font-weight:700; color:var(--ink);}
   .personhead .sub3{font-size:13px; color:var(--muted); margin-top:2px;}
+  .nickrow{margin-top:6px; font-size:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  .nickrow .nicklabel{color:var(--muted); font-size:12px;}
+  .nickrow .nickval{color:var(--ink);}
+  .nickrow .nickadd{color:var(--muted);}
+  .nickrow .nickbtn{background:none; border:none; padding:2px 0; font:inherit; cursor:pointer; text-align:left;}
+  .nickrow .nickbtn:disabled{opacity:.5; cursor:default;}
+  .nickrow input{flex:1; min-width:140px; font-size:16px; padding:6px 8px; border:1px solid var(--line); border-radius:6px;}
+  .nickrow .nickact{font-size:14px; padding:6px 12px;}
   .reviewbody{padding:0;}
   .reviewnav{display:flex; flex-wrap:wrap; gap:8px; padding:10px 16px 24px; position:sticky; bottom:0;
              background:var(--paper);}
@@ -670,6 +679,7 @@
     bulkContactPreview: '対象を確認しています…',
     bulkContactApply: '交換情報を設定しています…',
     savePerson: '保存中…',
+    updateNickname: '保存中…',
     markOrganized: '保存中…',
     addContact: '保存中…',
     snsSave: '保存中…',
@@ -1672,11 +1682,57 @@
     var checkedBadge = sns.snsCheckedAt ? '<span class="badge done">SNS確認済み</span>' : '<span class="badge">SNS未確認</span>';
     return '<h4>SNS '+checkedBadge+'</h4>' + rows + '<button type="button" class="sectionbtn" id="personSnsLinkBtn" style="margin:12px 0 0;">SNSを探す</button>';
   }
+  // ---- ニックネーム（詳細画面の氏名の下。その場で編集） ----
+  var NICK_MAX = 50;
+  function normalizeNick_(v){
+    return String(v==null?'':v).replace(/[，､,]/g,'、').trim().replace(/\s*、\s*/g,'、').replace(/、{2,}/g,'、').replace(/^、|、$/g,'').trim();
+  }
+  function renderNickRow_(id, nick, editing){
+    var box = EL('nickRow'); if(!box) return;
+    var offline = (typeof isOnline_==='function') && !isOnline_();
+    if(!editing){
+      box.innerHTML = '<span class="nicklabel">ニックネーム</span>'
+        + '<button type="button" class="nickbtn" id="nickEditBtn"'+(offline?' disabled':'')+'>'
+        + (nick ? '<span class="nickval">'+esc(nick)+'</span>' : '<span class="nickadd">＋ ニックネームを追加</span>')
+        + '</button>' + (offline ? '<span class="nicklabel">オンライン時に編集できます</span>' : '');
+      EL('nickEditBtn').onclick = function(){
+        if(typeof isOnline_==='function' && !isOnline_()){ toast('オンライン時に編集してください'); return; }
+        renderNickRow_(id, nick, true);
+      };
+      return;
+    }
+    box.innerHTML = '<input type="text" id="nickInput" maxlength="'+(NICK_MAX+20)+'" placeholder="例：たむさん、とみぃ" autocomplete="off">'
+      + '<button type="button" class="primary nickact" id="nickSaveBtn">保存</button>'
+      + '<button type="button" class="nickact" id="nickCancelBtn">キャンセル</button>';
+    var inp = EL('nickInput'); inp.value = nick; inp.focus();
+    EL('nickCancelBtn').onclick = function(){ renderNickRow_(id, nick, false); };
+    var save = function(){
+      var v = normalizeNick_(inp.value);
+      if(v.length > NICK_MAX){ toast('ニックネームは'+NICK_MAX+'文字以内にしてください'); return; }
+      if(typeof isOnline_==='function' && !isOnline_()){ toast('オンライン時に保存してください'); return; }
+      api('updateNickname', { contactId:id, nickname:v }).then(function(r){
+        if(!r || !r.ok){
+          if(r && r.error==='auth'){ doLogout(); return; }
+          toast(r && r.error==='too_long' ? 'ニックネームは'+NICK_MAX+'文字以内にしてください' : '保存に失敗しました');
+          return;
+        }
+        var saved = (r.data && r.data.nickname != null) ? r.data.nickname : v;
+        toast(saved ? 'ニックネームを保存しました' : 'ニックネームを削除しました');
+        if(typeof eightApplyNickname_==='function') eightApplyNickname_(id, saved);
+        renderNickRow_(id, saved, false);
+      });
+    };
+    EL('nickSaveBtn').onclick = save;
+    inp.onkeydown = function(e){ if(e.key==='Enter'){ e.preventDefault(); save(); } };
+  }
+
   function renderPerson(id, data){
     var card=data.card, crm=data.crm, sns=data.sns, histories=data.histories||[];
     CURRENT_PERSON_INFO = { name:card.name, company:card.company };
     EL('personHead').innerHTML = '<div class="name3">'+esc(card.name||'(氏名不明)')+'</div>'
-      + '<div class="sub3">'+esc([card.company, card.dept, card.title].filter(Boolean).join(' / '))+'</div>';
+      + '<div class="sub3">'+esc([card.company, card.dept, card.title].filter(Boolean).join(' / '))+'</div>'
+      + '<div class="nickrow" id="nickRow"></div>';
+    renderNickRow_(id, crm.nickname || '', false);
     EL('personInfo').innerHTML = personInfoHtml(card);
     EL('personActs').innerHTML = personActsHtml(card);
     var exList = histories.filter(function(h){ return h.contactType==='名刺交換'; });
@@ -1961,6 +2017,13 @@
       ps.crm.organized = (body.organized===undefined) ? true : !!body.organized;
       return {ok:true, data:{ id:ps.card.id, organized:ps.crm.organized, updatedAt: todayStr()+' 12:00:00' }};
     }
+    if(action==='updateNickname'){
+      var pn = findMockPerson(body.contactId); if(!pn) return {ok:false, error:'not_found'};
+      var nv = String(body.nickname||'').replace(/[，､,]/g,'、').trim();
+      if(nv.length > 50) return {ok:false, error:'too_long'};
+      pn.crm.nickname = nv; MOCK_VER++;
+      return {ok:true, data:{ id:pn.card.id, nickname:nv, updatedAt: todayStr()+' 12:00:00' }};
+    }
     if(action==='markOrganized'){
       var pm = findMockPerson(body.id); if(!pm) return {ok:false, error:'not_found'};
       pm.crm.organized = !!body.organized;
@@ -2070,6 +2133,7 @@
         if(tel) o.p = tel;
         var ad = (p.card.pref||'')+(p.card.city||''); if(ad) o.a = ad;
         if(p.card.industry) o.i = p.card.industry;
+        if(p.crm.nickname) o.nk = p.crm.nickname;
         var evs = [];
         p.histories.forEach(function(h){ if(h.eventName && evs.indexOf(h.eventName)<0) evs.push(h.eventName); });
         if(evs.length) o.ev = evs.join(' ');
@@ -2110,7 +2174,7 @@
       var hitIds = [];
       MOCK_DB.persons.forEach(function(p){
         if(MOCK_TRASH[p.card.id]) return;
-        var text = eightNormalize(p.histories.map(function(h){ return (h.memo||'')+' '+(h.eventName||''); }).join(' ') + ' ' + (p.crm.memo||''));
+        var text = eightNormalize(p.histories.map(function(h){ return (h.memo||'')+' '+(h.eventName||''); }).join(' ') + ' ' + (p.crm.memo||'') + ' ' + (p.crm.nickname||''));
         if(qs.length && qs.every(function(w){ return text.indexOf(w) >= 0; })) hitIds.push(p.card.id);
       });
       return {ok:true, data:{ ids:hitIds, limited:false }};
@@ -2121,8 +2185,9 @@
 </script>
 <script>
   // ==================== Eight風 一覧UI（IndexedDBキャッシュ＋listLite/listDelta/getThumbs） ====================
+  // LIST_SCHEMA 3: nk(ニックネーム)を追加。schema が違う一覧キャッシュは捨てて取り直す。
   // IDB_VERSION 2: 一覧に検索用キー(k/e/p/a/i/ev/tg)を追加したスキーマ。旧(v1)の一覧キャッシュは破棄して取り直す。
-  var IDB_NAME = 'meishi', IDB_VERSION = 2, IDB_LIST_KEY = 'v2', LIST_SCHEMA = 2;
+  var IDB_NAME = 'meishi', IDB_VERSION = 2, IDB_LIST_KEY = 'v2', LIST_SCHEMA = 3;
   function idbOpen(){
     return new Promise(function(resolve, reject){
       if(!('indexedDB' in window)){ reject(new Error('no_indexeddb')); return; }
@@ -2177,7 +2242,7 @@
     return (arr || []).map(function(it){
       return { id: it.id, name: it.n, company: it.c, title: it.t, exchangedAt: it.d, thumbFileId: it.th,
                kana: it.k || '', email: it.e || '', tel: it.p || '', addr: it.a || '',
-               industry: it.i || '', events: it.ev || '', tags: it.tg || [] };
+               industry: it.i || '', events: it.ev || '', tags: it.tg || [], nickname: it.nk || '' };
     });
   }
 
@@ -2197,6 +2262,7 @@
     if(it.tel) parts = parts.concat(String(it.tel).split(' '));
     if(it.events) parts = parts.concat(String(it.events).split(' '));
     if(it.tags && it.tags.length) parts = parts.concat(it.tags);
+    if(it.nickname) parts = parts.concat(String(it.nickname).split('、'));
     Object.defineProperty(it, '_s', { value: parts.map(eightNormalize).join(' '), writable:true, configurable:true, enumerable:false });
   }
   function eightIndexItems_(items){ for(var i=0; i<items.length; i++) eightIndexItem_(items[i]); }
@@ -2285,7 +2351,7 @@
     return '<div class="erow'+(on?' sel':'')+'" data-id="'+esc(it.id)+'">'
       + chk
       + '<div class="ebody">'
-      + '<div class="ename">'+esc(it.name||'(氏名不明)')+'</div>'
+      + '<div class="ename">'+esc(it.name||'(氏名不明)')+(it.nickname?'<span class="enick">（'+esc(it.nickname)+'）</span>':'')+'</div>'
       + (it.company?'<div class="ecompany">'+esc(it.company)+'</div>':'')
       + (it.title?'<div class="etitle">'+esc(it.title)+'</div>':'')
       + '</div>' + thumbHtml + '</div>';
@@ -2579,6 +2645,19 @@
     eightIndexItems_(items);
     eightAllItems = items; eightVersion = data.version;
     eightInvalidate_();
+    eightPersist_();
+  }
+  // ニックネームを保存した直後に、一覧・検索用文字列・IndexedDB へ即時反映する
+  function eightApplyNickname_(id, nick){
+    for(var i=0; i<eightAllItems.length; i++){
+      if(eightAllItems[i].id === id){
+        eightAllItems[i].nickname = nick || '';
+        eightIndexItem_(eightAllItems[i]);
+        break;
+      }
+    }
+    eightInvalidate_();
+    if(typeof eightRebuild==='function' && EL('eightList')) { try { eightRebuild(); } catch(e){} }
     eightPersist_();
   }
   function eightPersist_(){

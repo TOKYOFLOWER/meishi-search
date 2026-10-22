@@ -29,7 +29,8 @@ var IMAGE_FOLDER_PROP = 'IMAGE_FOLDER_ID';
 var PERSON_HEADER = ['contactId', 'organized', 'importance', 'relationship', 'tags', 'needs',
   'canIntroduce', 'wantIntroduce', 'nextAction', 'nextActionDate', 'memo',
   'facebookUrl', 'instagramUrl', 'linkedinUrl', 'xUrl', 'youtubeUrl', 'otherSnsUrl',
-  'snsCheckedAt', 'createdAt', 'updatedAt'];
+  'snsCheckedAt', 'createdAt', 'updatedAt', 'nickname'];
+var NICKNAME_MAX = 50;
 var HISTORY_HEADER = ['contactId', 'contactDate', 'eventName', 'contactType', 'memo',
   'followUp', 'followDate', 'createdAt'];
 // 整理モードのクイックタグ（初期12件）。tags action はこれ＋人物管理 tags の DISTINCT を返す
@@ -138,6 +139,8 @@ function doPost(e) {
       out = getPerson_(body);
     } else if (body.action === 'savePerson') {
       out = savePersonToSheet_(body);
+    } else if (body.action === 'updateNickname') {
+      out = updateNickname_(body);
     } else if (body.action === 'markOrganized') {
       out = markOrganizedInSheet_(body);
     } else if (body.action === 'addContact') {
@@ -403,7 +406,7 @@ function addDaysIso_(iso, days) {
 function defaultCrm_() {
   return {
     organized: false, importance: '', relationship: '', tags: [], needs: '',
-    canIntroduce: '', wantIntroduce: '', nextAction: '', nextActionDate: '', memo: ''
+    canIntroduce: '', wantIntroduce: '', nextAction: '', nextActionDate: '', memo: '', nickname: ''
   };
 }
 function crmFromRow_(row, c) {
@@ -417,7 +420,8 @@ function crmFromRow_(row, c) {
     wantIntroduce: row[c['wantIntroduce']] || '',
     nextAction: row[c['nextAction']] || '',
     nextActionDate: pickExchanged_(row[c['nextActionDate']]),
-    memo: row[c['memo']] || ''
+    memo: row[c['memo']] || '',
+    nickname: c['nickname'] !== undefined ? String(row[c['nickname']] || '') : ''
   };
 }
 function personDateFields_() { return ['nextActionDate', 'snsCheckedAt', 'createdAt', 'updatedAt']; }
@@ -1343,6 +1347,46 @@ function savePersonToSheet_(input) {
   }
 }
 
+// ニックネームの正規化: 前後の空白除去、区切りの「，」「､」「,」を「、」に統一。長さ超過は null
+function normalizeNickname_(v) {
+  var s = String(v == null ? '' : v).replace(/[，､,]/g, '、').trim();
+  s = s.replace(/\s*、\s*/g, '、').replace(/、{2,}/g, '、').replace(/^、|、$/g, '').trim();
+  return s.length > NICKNAME_MAX ? null : s;
+}
+// 人物管理.nickname だけを更新する。organized は変えない（行が無ければ organized=false で新規作成）。
+// 更新時は updatedAt と一覧 version を更新するので、他端末の listDelta で差分として届く。
+function updateNickname_(input) {
+  input = input || {};
+  var id = String(input.contactId || input.id || '').trim();
+  if (!id) return { ok: false, error: 'missing_id' };
+  var nick = normalizeNickname_(input.nickname);
+  if (nick === null) return { ok: false, error: 'too_long', max: NICKNAME_MAX };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    setupSnsBulkColumns_(); // nickname 列が無ければ末尾に追加（ヘッダー名で特定。既存列は触らない）
+    var personD = readSheet_(PERSON_SHEET);
+    var header = personD.header;
+    var rowIdx = findRowByContactId_(personD, id);
+    var now = nowStamp_();
+    var record;
+    if (rowIdx < 0) {
+      record = {}; header.forEach(function (h) { record[h] = ''; });
+      record.contactId = id; record.organized = false; record.createdAt = now;
+    } else {
+      record = {}; header.forEach(function (h, i2) { record[h] = personD.rows[rowIdx][i2]; });
+    }
+    record.nickname = nick;
+    record.updatedAt = now;
+    var rowNum = rowIdx < 0 ? personD.sheet.getLastRow() + 1 : rowIdx + 2;
+    writeSheetRow_(personD.sheet, header, rowNum, record, personDateFields_());
+    invalidateBootstrapCache_();
+    return { ok: true, data: { id: id, nickname: nick, updatedAt: now } };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function markOrganizedInSheet_(input) {
   input = input || {};
   var id = String(input.id || '').trim();
@@ -1821,7 +1865,7 @@ function bumpListVersion_() {
 // キー名は短縮。フロントで展開して検索用文字列を1回だけ作る。空の項目はキーごと省略して転送量を抑える。
 //   id,n(氏名),c(会社),t(役職),d(交換日),th(サムネ)
 //   k(よみ=備考の「かな:」),e(メール),p(電話=会社TEL+携帯を数字のみに),a(都道府県+市区),
-//   i(業種),ev(接触履歴のイベント名・重複除去、スペース区切り),tg(タグ名の配列)
+//   i(業種),ev(接触履歴のイベント名・重複除去、スペース区切り),tg(タグ名の配列),nk(ニックネーム。「、」区切りで複数)
 // 削除済み(deletedAt あり)の行は items に含めず、id を deletedIds に集める。
 function buildListLite_() {
   var d = readCards_(['id', '氏名', '会社名', '役職', '名刺交換日', THUMB_COL, 'メール', '会社TEL', '携帯',
@@ -1858,6 +1902,7 @@ function buildListLite_() {
     var ind = S(r, '業種').trim(); if (ind) o.i = ind;
     if (evById[id]) o.ev = evById[id];
     var pr = pm.byId[id];
+    if (pr && pm.c['nickname'] !== undefined) { var nk = String(pr[pm.c['nickname']] || '').trim(); if (nk) o.nk = nk; }
     if (pr) { var tg = parseTags_(pr[pm.c['tags']]); if (tg.length) o.tg = tg; }
     items.push(o);
   });
@@ -2582,7 +2627,7 @@ function normSearch_(s) {
   s = s.toLowerCase().replace(/[ァ-ヶ]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0x60); });
   return s.replace(/[\s　()\[\]{}<>「」『』【】〔〕〈〉《》\-‐-―−－]/g, '');
 }
-// 接触履歴(memo/eventName)・人物管理(memo/needs/nextAction)の本文を部分一致で検索し、名刺IDの配列だけ返す。
+// 接触履歴(memo/eventName)・人物管理(memo/needs/nextAction/nickname)の本文を部分一致で検索し、名刺IDの配列だけ返す。
 // スペース区切りの複数語は AND（名刺ごとに本文をまとめて判定）。上限200件。削除済み名刺は除外。
 function searchText_(body) {
   var raw = String((body && body.q) || '').trim();
@@ -2604,7 +2649,7 @@ function searchText_(body) {
   var pm = loadPersonMap_();
   pm.rows.forEach(function (r) {
     var id = String(r[pm.c['contactId']]);
-    ['memo', 'needs', 'nextAction'].forEach(function (f) {
+    ['memo', 'needs', 'nextAction', 'nickname'].forEach(function (f) {
       if (pm.c[f] !== undefined) add(id, String(r[pm.c[f]] || ''));
     });
   });
