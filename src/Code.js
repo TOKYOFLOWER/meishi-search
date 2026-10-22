@@ -690,7 +690,7 @@ function buildDupIndex_(rows, c) {
   rows.forEach(function (r, i) {
     var rowNum = i + 2;
     var sm = splitSeiMei_(r[c['氏名']], r[c['姓']], r[c['名']]);
-    idx.info[rowNum] = { name: String(r[c['氏名']] || '').trim(), id: String(r[c['id']] || ''), sei: sm.sei, mei: sm.mei };
+    idx.info[rowNum] = { name: String(r[c['氏名']] || '').trim(), id: String(r[c['id']] || ''), sei: sm.sei, mei: sm.mei, co: normKey_(r[c['会社名']]) };
     add(idx.email, normKey_(r[c['メール']]), rowNum);
     [r[c['会社TEL']], r[c['携帯']]].forEach(function (t) { var d = digitsOnly_(t); if (d.length >= 6) add(idx.tel, d, rowNum); });
     add(idx.sei, sm.sei, rowNum);
@@ -698,7 +698,7 @@ function buildDupIndex_(rows, c) {
   return idx;
 }
 
-// (a)メール一致 (b)TEL/携帯一致 (c)姓一致かつ名が同字数で相違1字以下(名2字以上のとき。0字相違=表記ゆれのみ)
+// (a)メール一致 (b)電話一致(携帯、またはどちらかの会社名が空。同社で姓名とも違う場合は除外) (c)姓一致かつ名が同字数で相違1字以下(名2字以上のとき。0字相違=表記ゆれのみ)
 // 戻り値: [{row, name, reasons:[...]}]（自分自身 selfRow は除く）
 function findDupCandidates_(rec, idx, selfRow) {
   var found = {};
@@ -709,11 +709,20 @@ function findDupCandidates_(rec, idx, selfRow) {
   };
   var em = normKey_(rec.email);
   if (em && idx.email[em]) idx.email[em].forEach(function (n) { hit(n, 'メール'); });
+  var sm = splitSeiMei_(rec.name, rec.sei, rec.mei);
+  var recCo = normKey_(rec.company);
+  // 電話一致は「携帯番号(070/080/090)」か「どちらかの会社名が空」の場合だけ。
+  // 同じ会社で姓も名も違う(同僚が代表番号を共有など)場合は付けない
   [rec.tel, rec.mobile].forEach(function (t) {
     var d = digitsOnly_(t);
-    if (d.length >= 6 && idx.tel[d]) idx.tel[d].forEach(function (n) { hit(n, '電話'); });
+    if (d.length < 6 || !idx.tel[d]) return;
+    var isMobile = /^0[789]0/.test(d);
+    idx.tel[d].forEach(function (n) {
+      var o = idx.info[n];
+      if (recCo && recCo === o.co && sm.sei !== o.sei && sm.mei !== o.mei) return;
+      if (isMobile || !recCo || !o.co) hit(n, '電話');
+    });
   });
-  var sm = splitSeiMei_(rec.name, rec.sei, rec.mei);
   if (sm.sei && idx.sei[sm.sei]) {
     idx.sei[sm.sei].forEach(function (n) {
       var o = idx.info[n];
@@ -914,7 +923,7 @@ function addCardToSheet(card) {
     var newRowNum = sh.getLastRow() + 1;
     // 重複候補の判定は追記前の既存行に対して行う（索引でO(行数)。失敗しても登録は継続）
     var dupCands = [];
-    try { dupCands = findDupCandidates_({ name: name, sei: sei, mei: mei, email: email, tel: tel, mobile: mobile }, buildDupIndex_(d.rows, c), -1); }
+    try { dupCands = findDupCandidates_({ company: company, name: name, sei: sei, mei: mei, email: email, tel: tel, mobile: mobile }, buildDupIndex_(d.rows, c), -1); }
     catch (e) { Logger.log('addCard: 重複候補の判定に失敗（登録は継続）: ' + e); }
     sh.getRange(newRowNum, 1, 1, row.length).setValues([row]);
     if (dupCands.length) {
@@ -1013,16 +1022,25 @@ function test_addCard_() {
     var pd = readSheet_(PERSON_SHEET), i = findRowByContactId_(pd, id);
     return i < 0 ? '' : String(pd.rows[i][pd.c['memo']] || '');
   };
-  var base = addCardToSheet({ company: '甲社', name: '重複試験 太郎', email: 'dupbase@example.com', tel: '03-1111-2222', mobile: '', source_file: '_dup0.png' });
+  var base = addCardToSheet({ company: '甲社', name: '重複試験 太郎', email: 'dupbase@example.com', tel: '03-1111-2222', mobile: '090-1111-3333', source_file: '_dup0.png' });
   if (base.ok && !base.duplicate) {
     dupIds.push(base.id);
     checks.push({ name: 'dup_base_no_tag', ok: dupTagsOf(base.id).indexOf('重複候補') < 0, detail: dupTagsOf(base.id) });
     var ta = addCardToSheet({ company: '乙社', name: '全然違う 花', email: 'DUPBASE@example.com', source_file: '_dupa.png' }); // (a) メール一致
     if (ta.ok && !ta.duplicate) dupIds.push(ta.id);
     checks.push({ name: 'dup_a_email', ok: !!(ta.ok && !ta.duplicate && dupTagsOf(ta.id).indexOf('重複候補') >= 0 && dupMemoOf(ta.id).indexOf('重複候補: 行' + base.row + ' 重複試験 太郎') >= 0), detail: dupTagsOf(ta.id) + ' | ' + dupMemoOf(ta.id) });
-    var tb = addCardToSheet({ company: '丙社', name: '別名 次郎', mobile: '03(1111)2222', source_file: '_dupb.png' }); // (b) 電話一致(数字のみ)
+    var tb = addCardToSheet({ company: '丙社', name: '別名 次郎', mobile: '090(1111)3333', source_file: '_dupb.png' }); // (b) 携帯一致(数字のみ。会社違い・氏名違いでも付く)
     if (tb.ok && !tb.duplicate) dupIds.push(tb.id);
-    checks.push({ name: 'dup_b_tel', ok: !!(tb.ok && dupTagsOf(tb.id).indexOf('重複候補') >= 0), detail: dupTagsOf(tb.id) });
+    checks.push({ name: 'dup_b_mobile_tag', ok: !!(tb.ok && dupTagsOf(tb.id).indexOf('重複候補') >= 0), detail: dupTagsOf(tb.id) });
+    var tb2 = addCardToSheet({ company: '丙社', name: '三田 三郎', tel: '03(1111)2222', source_file: '_dupb2.png' }); // 固定電話一致・両社とも会社名あり → 付かない
+    if (tb2.ok && !tb2.duplicate) dupIds.push(tb2.id);
+    checks.push({ name: 'dup_b_landline_with_companies_no_tag', ok: !!(tb2.ok && dupTagsOf(tb2.id).indexOf('重複候補') < 0), detail: dupTagsOf(tb2.id) });
+    var tb3 = addCardToSheet({ company: '甲社', name: '四方 史朗', tel: '03-1111-2222', source_file: '_dupb3.png' }); // 同社の同僚が代表番号を共有 → 付かない
+    if (tb3.ok && !tb3.duplicate) dupIds.push(tb3.id);
+    checks.push({ name: 'dup_b_same_company_colleague_no_tag', ok: !!(tb3.ok && dupTagsOf(tb3.id).indexOf('重複候補') < 0), detail: dupTagsOf(tb3.id) });
+    var tb4 = addCardToSheet({ company: '', name: '無所属 五郎', tel: '03-1111-2222', source_file: '_dupb4.png' }); // 会社名なし側 + 固定電話一致 → 付く
+    if (tb4.ok && !tb4.duplicate) dupIds.push(tb4.id);
+    checks.push({ name: 'dup_b_landline_company_empty_tag', ok: !!(tb4.ok && dupTagsOf(tb4.id).indexOf('重複候補') >= 0), detail: dupTagsOf(tb4.id) });
     var tc = addCardToSheet({ company: '丁社', name: '重複試験 太朗', source_file: '_dupc.png' }); // (c) 姓同一・名1字違い
     if (tc.ok && !tc.duplicate) dupIds.push(tc.id);
     checks.push({ name: 'dup_c_one_char', ok: !!(tc.ok && dupTagsOf(tc.id).indexOf('重複候補') >= 0), detail: dupTagsOf(tc.id) });
