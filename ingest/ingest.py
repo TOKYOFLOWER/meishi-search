@@ -557,7 +557,7 @@ def extract_card_from_file(client: anthropic.Anthropic, model: str, path: Path) 
     """名刺ファイルからClaudeで情報を抽出する。
 
     戻り値: (抽出結果の辞書 または None, APIの生レスポンステキスト)
-    company/nameが両方空、JSONパース失敗の場合はExtractionErrorを送出する。
+    name(氏名)が空、JSONパース失敗の場合はExtractionErrorを送出する。
     """
     content_block = build_content_block(path)
 
@@ -581,10 +581,10 @@ def extract_card_from_file(client: anthropic.Anthropic, model: str, path: Path) 
     if not isinstance(parsed, dict):
         raise ExtractionError("Claudeの応答がJSONオブジェクトではありません", raw_text=raw_text)
 
-    company = str(parsed.get("company") or "").strip()
+    # 会社名なしの名刺(個人事業主・セラピスト等)も登録する。必須は氏名のみ
     name = str(parsed.get("name") or "").strip()
-    if not company and not name:
-        raise ExtractionError("company/nameが両方とも空です", raw_text=raw_text)
+    if not name:
+        raise ExtractionError("nameが空です(氏名を読み取れませんでした)", raw_text=raw_text)
 
     return parsed, raw_text
 

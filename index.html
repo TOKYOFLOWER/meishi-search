@@ -164,6 +164,8 @@
   .newrow .chk{width:22px; height:22px; margin:0; cursor:pointer;}
   .newrow > .body{padding:11px 0;}
   .newrow > .snslink{padding-top:14px;}
+  .chkline{display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--ink);}
+  .chkline input{width:18px; height:18px;}
   .selectallrow{display:flex; justify-content:flex-end; padding:0 16px 4px;}
   .selectallrow button{font-size:12.5px; padding:6px 12px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--ink);}
   #selBar{position:fixed; left:0; right:0; bottom:0; z-index:40; background:#fff; border-top:1px solid var(--line);
@@ -1183,6 +1185,7 @@
         + '<label><input type="radio" name="bkScope" value="unset"> 未設定の名刺のみ</label>'
         + '<label><input type="radio" name="bkScope" value="ids" '+(checkedIds.length?'':'disabled')+'> チェックした人物（'+checkedIds.length+'件）</label>')
       + '</div></div>'
+      + '<div class="fgroup"><label class="chkline"><input type="checkbox" id="bkOrganize"'+(selectedOnly?' checked':'')+'> 適用と同時に整理済みにする</label></div>'
       + '<div class="previewbox" id="bkPreview">「対象を確認」を押してください</div>'
       + '<div id="bkConfirmArea"></div>'
       + '<div class="formsave" style="padding:14px 0 0;">'
@@ -1214,7 +1217,8 @@
           document.getElementById('bkPreview').textContent='エラーが発生しました';
           return;
         }
-        previewData = { scope:scope, date:date, eventName:eventName, ids: scope==='ids'?checkedIds:undefined, res:r.data };
+        previewData = { scope:scope, date:date, eventName:eventName, ids: scope==='ids'?checkedIds:undefined, res:r.data,
+                        markOrganized: document.getElementById('bkOrganize').checked };
         document.getElementById('bkPreview').textContent =
           r.data.targetCount+'件に設定します（うち上書き対象 '+r.data.willOverwriteCount+'件、履歴作成済み '+r.data.alreadyHistoryCount+'件）';
         document.getElementById('bkApplyBtn').disabled = false;
@@ -1245,6 +1249,7 @@
     setBulkButtonsDisabled(true);
     var body = { scope:previewData.scope, days:newState.days, date:previewData.date, eventName:previewData.eventName, overwrite:overwrite };
     if(previewData.scope==='ids') body.ids = previewData.ids;
+    if(previewData.markOrganized) body.markOrganized = true;
     var n = previewData.res && previewData.res.targetCount;
     var busyMessage = n ? (n+'件に交換情報を設定しています…') : '交換情報を設定しています…';
     api('bulkContactApply', body, { busyMessage: busyMessage }).then(function(r){
@@ -1257,7 +1262,8 @@
       }
       closeModal();
       BOOT_NEWCARDS = null;
-      toast('交換日 更新 '+r.data.updatedDateCount+'件／履歴 作成 '+r.data.createdHistoryCount+'件／重複スキップ '+r.data.skippedDupCount+'件');
+      toast('交換日 更新 '+r.data.updatedDateCount+'件／履歴 作成 '+r.data.createdHistoryCount+'件／重複スキップ '+r.data.skippedDupCount+'件'
+        +(r.data.organizedCount?'／整理済み '+r.data.organizedCount+'件':''));
       saveSession({ date: previewData.date, eventName: previewData.eventName });
       loadSessionIntoBar();
       loadNewList();
@@ -1875,14 +1881,15 @@
     }
     if(action==='bulkContactApply'){
       var label2 = formatMockLabel(body.eventName, body.date);
-      var ids = ['M00001','M00003','M00004'];
+      var ids = (body.scope==='ids' && body.ids && body.ids.length) ? body.ids : ['M00001','M00003','M00004'];
       ids.forEach(function(id){
         var p2=findMockPerson(id); if(!p2) return;
+        if(body.markOrganized){ p2.crm.organized = true; }
         if(!p2.card.exchanged || body.overwrite){ p2.card.exchanged = body.date; }
         var dup2 = p2.histories.some(function(h){ return h.contactDate===body.date && h.eventName===(body.eventName||'') && h.contactType==='名刺交換'; });
         if(!dup2){ p2.histories.unshift({ contactDate:body.date, eventName:body.eventName||'', contactType:'名刺交換', memo:'', followUp:false, followDate:'', createdAt:todayStr()+' 12:00:00', label:label2 }); }
       });
-      return {ok:true, data:{ targetCount:3, updatedDateCount:2, createdHistoryCount:3, skippedDupCount:0, label:label2 }};
+      return {ok:true, data:{ targetCount:ids.length, updatedDateCount:2, createdHistoryCount:3, skippedDupCount:0, label:label2, organizedCount: body.markOrganized ? ids.length : 0 }};
     }
     if(action==='snsDetectFromSite'){
       var pd = findMockPerson(body.id); if(!pd) return {ok:false, error:'not_found'};

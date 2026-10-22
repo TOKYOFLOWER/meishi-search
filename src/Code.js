@@ -663,6 +663,28 @@ function normKey_() {
   return s.toLowerCase();
 }
 
+// 会社名なし名刺の重複判定。戻り値: 既存行の添字(rows内) / 見つからなければ undefined
+function findNoCompanyDup_(rows, c, nameKey, email, tels) {
+  var digits = function (v) { return String(v || '').replace(/\D/g, ''); };
+  var newEmail = normKey_(email);
+  var newTels = tels.map(digits).filter(function (x) { return x.length >= 6; });
+  var hasContact = !!newEmail || newTels.length > 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (normKey_(r[c['氏名']]) !== nameKey && normKey_(r[c['姓']], r[c['名']]) !== nameKey) continue;
+    if (!hasContact) {
+      if (!String(r[c['会社名']] || '').trim()) return i;
+      continue;
+    }
+    if (newEmail && normKey_(r[c['メール']]) === newEmail) return i;
+    var exTels = [digits(r[c['会社TEL']]), digits(r[c['携帯']])];
+    for (var k = 0; k < newTels.length; k++) {
+      if (exTels.indexOf(newTels[k]) >= 0) return i;
+    }
+  }
+  return undefined;
+}
+
 function addCardToSheet(card) {
   card = card || {};
   var company = String(card.company || '').trim();
@@ -682,7 +704,7 @@ function addCardToSheet(card) {
   var scannedAt = String(card.scanned_at || '').trim();
   var listThumbB64 = String(card.listThumb || '').trim(); // 一覧表示用サムネ(幅480px/JPEG70%)。base64はここではDriveに未保存
 
-  if (!company || !name) return { ok: false, error: 'missing_required' }; // どちらかが空なら拒否
+  if (!name) return { ok: false, error: 'missing_required' }; // 氏名が空なら拒否（会社名は空でも登録する）
 
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -712,8 +734,14 @@ function addCardToSheet(card) {
     });
     var newKeyA = normKey_(company, sei, mei);
     var newKeyB = normKey_(company, name);
-    var dupIdx = existingKeys[newKeyA];
-    if (dupIdx === undefined) dupIdx = existingKeys[newKeyB];
+    var dupIdx;
+    if (company) {
+      dupIdx = existingKeys[newKeyA];
+      if (dupIdx === undefined) dupIdx = existingKeys[newKeyB];
+    } else {
+      // 会社名なし: 正規化氏名＋(メール or TEL/携帯 のいずれか一致)。連絡先が全く無ければ 正規化氏名＋会社名空 で判定
+      dupIdx = findNoCompanyDup_(d.rows, c, normKey_(name), email, [tel, mobile]);
+    }
     if (dupIdx !== undefined) {
       return { ok: true, duplicate: true, row: dupIdx + 2 };
     }
@@ -845,6 +873,40 @@ function test_addCard_() {
     Logger.log('削除: id ' + res.id);
   } else if (res.ok && res.duplicate) {
     Logger.log('重複として検出されました（row ' + res.row + '）。削除は行いません。');
+  }
+  // --- 会社名なしのケース（追記・重複判定・行削除まで自己完結） ---
+  var nc = { company: '', name: '無所属 テスト花子', kana: 'Hanako', title: 'セラピスト', email: 'nc-test@example.com',
+             tel: '', mobile: '090-9999-0001', source_file: '_test_nc.png' };
+  var createdIds = [];
+  var n1 = addCardToSheet(nc);
+  checks.push({ name: 'nc_add_ok', ok: !!(n1.ok && !n1.duplicate), detail: JSON.stringify(n1) });
+  if (n1.ok && !n1.duplicate) {
+    createdIds.push(n1.id);
+    var sh2 = getSheet_();
+    var h2 = sh2.getRange(1, 1, 1, sh2.getLastColumn()).getValues()[0];
+    var c2 = colIndex_(h2);
+    var r2 = sh2.getRange(n1.row, 1, 1, h2.length).getValues()[0];
+    checks.push({ name: 'nc_company_empty', ok: String(r2[c2['会社名']]).trim() === '' && String(r2[c2['氏名']]) === nc.name, detail: String(r2[c2['会社名']]) });
+    checks.push({ name: 'nc_derived_empty_ok', ok: String(r2[c2['役職レベル']] == null ? '' : r2[c2['役職レベル']]) !== 'undefined', detail: String(r2[c2['業種']]) });
+    var n2 = addCardToSheet(nc); // 同一メール → 重複
+    checks.push({ name: 'nc_dup_same_email', ok: !!(n2.ok && n2.duplicate && n2.row === n1.row), detail: JSON.stringify(n2) });
+    var nc2 = JSON.parse(JSON.stringify(nc)); nc2.email = ''; // メール無し・同一携帯 → 重複
+    var n3 = addCardToSheet(nc2);
+    checks.push({ name: 'nc_dup_same_mobile', ok: !!(n3.ok && n3.duplicate && n3.row === n1.row), detail: JSON.stringify(n3) });
+    var nc3 = JSON.parse(JSON.stringify(nc)); nc3.email = 'other@example.com'; nc3.mobile = '090-9999-0002'; // 連絡先が全て異なる → 別人
+    var n4 = addCardToSheet(nc3);
+    checks.push({ name: 'nc_not_dup_other_contact', ok: !!(n4.ok && !n4.duplicate), detail: JSON.stringify(n4) });
+    if (n4.ok && !n4.duplicate) createdIds.push(n4.id);
+    var nc4 = { company: '', name: '無所属 テスト花子', source_file: '_test_nc2.png' }; // 連絡先なし → 氏名＋会社名空で重複
+    var n5 = addCardToSheet(nc4);
+    checks.push({ name: 'nc_dup_name_only', ok: !!(n5.ok && n5.duplicate), detail: JSON.stringify(n5) });
+    if (n5.ok && !n5.duplicate) createdIds.push(n5.id);
+  }
+  var n6 = addCardToSheet({ company: 'テスト株式会社', name: '' });
+  checks.push({ name: 'name_empty_rejected', ok: !!(n6 && n6.ok === false && n6.error === 'missing_required'), detail: JSON.stringify(n6) });
+  if (createdIds.length) {
+    deleteTestRows_(createdIds);
+    Logger.log('削除(会社名なしテスト): ' + createdIds.join(','));
   }
   var result = { pass: checks.every(function (x) { return x.ok; }), checks: checks };
   Logger.log(JSON.stringify(result));
@@ -1788,10 +1850,35 @@ function bulkContactApply_(input) {
       histD.sheet.getRange(startRow, 1, appendRows.length, header.length).setValues(appendRows);
     }
 
+    // 適用と同時に整理済みにする（既存の markOrganized と同じ人物管理の organized 更新を、対象IDにまとめて適用）
+    var organizedCount = 0;
+    if (input.markOrganized) {
+      var personD = readSheet_(PERSON_SHEET);
+      var pHeader = personD.header, pIdx = {};
+      personD.rows.forEach(function (r, i) { pIdx[String(r[personD.c['contactId']])] = i; });
+      var nextNew = personD.sheet.getLastRow() + 1;
+      var stamp = nowStamp_();
+      t.targets.forEach(function (x) {
+        var id = String(x.r[c['id']]);
+        var rec = {}, rowNum;
+        if (pIdx.hasOwnProperty(id)) {
+          pHeader.forEach(function (h, i2) { rec[h] = personD.rows[pIdx[id]][i2]; });
+          rowNum = pIdx[id] + 2;
+        } else {
+          pHeader.forEach(function (h) { rec[h] = ''; });
+          rec.contactId = id; rec.createdAt = stamp;
+          rowNum = nextNew++;
+        }
+        rec.organized = true; rec.updatedAt = stamp;
+        writeSheetRow_(personD.sheet, pHeader, rowNum, rec, personDateFields_());
+        organizedCount++;
+      });
+    }
+
     invalidateBootstrapCache_();
     var label = formatContactLabel_(eventName, iso);
     Logger.log('bulkContactApply: ' + t.targets.length + '件 / 交換日更新 ' + updatedDateCount + ' / 履歴作成 ' + createdHistoryCount + ' / 重複 ' + skippedDupCount + ' / ' + (Date.now() - t0) + 'ms');
-    return { ok: true, data: { targetCount: t.targets.length, updatedDateCount: updatedDateCount, createdHistoryCount: createdHistoryCount, skippedDupCount: skippedDupCount, label: label } };
+    return { ok: true, data: { targetCount: t.targets.length, updatedDateCount: updatedDateCount, createdHistoryCount: createdHistoryCount, skippedDupCount: skippedDupCount, label: label, organizedCount: organizedCount } };
   } finally {
     lock.releaseLock();
   }
@@ -2054,6 +2141,17 @@ function test_bulk_() {
     d2.rows.forEach(function (r) { if (String(r[c2['id']]) === ids[2]) saburoRow = r; });
     var saburoExchanged = saburoRow ? isoDate_(saburoRow[c2['名刺交換日']]) : null;
     checks.push({ name: 'saburo_exchanged_unchanged', ok: saburoExchanged === '2020-01-01', detail: String(saburoExchanged) });
+
+    // 整理済みフラグ: 指定なしでは触らず、markOrganized:true で対象IDだけ organized=true になる
+    var orgOf = function (id) {
+      var pd = readSheet_(PERSON_SHEET), i = findRowByContactId_(pd, id);
+      return i < 0 ? null : isTrue_(pd.rows[i][pd.c['organized']]);
+    };
+    checks.push({ name: 'organized_untouched_without_flag', ok: orgOf(ids[0]) !== true, detail: String(orgOf(ids[0])) });
+    var res3 = bulkContactApply_({ scope: 'ids', ids: [ids[0], ids[1]], date: '2026/09/08', eventName: 'テストイベント', overwrite: false, markOrganized: true });
+    checks.push({ name: 'organized_count_2', ok: res3.ok && res3.data.organizedCount === 2, detail: JSON.stringify(res3) });
+    checks.push({ name: 'organized_flag_applied', ok: orgOf(ids[0]) === true && orgOf(ids[1]) === true, detail: String(orgOf(ids[0])) + '/' + String(orgOf(ids[1])) });
+    checks.push({ name: 'organized_other_untouched', ok: orgOf(ids[2]) !== true, detail: String(orgOf(ids[2])) });
 
     checks.push({ name: 'isoDate_slash', ok: isoDate_('2026/09/08') === '2026-09-08', detail: isoDate_('2026/09/08') });
     checks.push({ name: 'isoDate_yymmdd_reject', ok: isoDate_('260908') === '', detail: JSON.stringify(isoDate_('260908')) });
