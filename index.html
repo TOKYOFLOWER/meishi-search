@@ -153,10 +153,25 @@
   .actrow button{flex:1; padding:11px; border-radius:12px; font-size:13.5px; font-weight:700;
                  border:1px solid var(--line); background:#fff; color:var(--ink);}
   .actrow button.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
-  .newlist{padding:6px 12px 90px;}
-  .newrow{background:#fff; border:1px solid var(--line); border-radius:12px; padding:11px 12px;
-          margin:7px 4px; display:flex; gap:10px; align-items:flex-start; cursor:pointer;}
-  .newrow .chk{margin-top:3px;}
+  .newlist{padding:6px 12px 130px;}
+  .newrow{background:#fff; border:1px solid var(--line); border-radius:12px; padding:0 12px 0 0;
+          margin:7px 4px; display:flex; gap:10px; align-items:stretch; cursor:pointer; overflow:hidden;}
+  .newrow.sel{background:#eef5ff; border-color:var(--accent);}
+  .newrow .selarea{flex:0 0 56px; width:56px; display:flex; align-items:center; justify-content:center;
+          cursor:pointer; margin:0; background:rgba(0,0,0,.03); border-right:1px solid var(--line);
+          -webkit-tap-highlight-color:transparent; touch-action:manipulation;}
+  .newrow.sel .selarea{background:rgba(0,102,255,.10);}
+  .newrow .chk{width:22px; height:22px; margin:0; cursor:pointer;}
+  .newrow > .body{padding:11px 0;}
+  .newrow > .snslink{padding-top:14px;}
+  .selectallrow{display:flex; justify-content:flex-end; padding:0 16px 4px;}
+  .selectallrow button{font-size:12.5px; padding:6px 12px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  #selBar{position:fixed; left:0; right:0; bottom:0; z-index:40; background:#fff; border-top:1px solid var(--line);
+          box-shadow:0 -2px 10px rgba(0,0,0,.12); padding:8px 10px calc(8px + env(safe-area-inset-bottom)); display:flex; flex-wrap:wrap; gap:6px; align-items:center;}
+  #selBar[hidden]{display:none;}
+  #selBar .selcount{font-size:13.5px; font-weight:700; margin-right:auto; padding-left:4px;}
+  #selBar button{font-size:12.5px; padding:9px 10px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  #selBar button.primary{background:var(--accent); color:#fff; border-color:var(--accent); font-weight:700;}
   .newrow .body{flex:1; min-width:0;}
   .newrow .name2{font-size:14.5px; font-weight:700;}
   .newrow .sub2{font-size:12px; color:var(--muted); margin-top:2px;}
@@ -389,7 +404,14 @@
       <button type="button" id="bulkOpenBtn">交換情報を一括設定</button>
       <button type="button" class="primary" id="startReviewBtn">整理を始める</button>
     </div>
+    <div class="selectallrow"><button type="button" id="selectAllTopBtn">表示中をすべて選択</button></div>
     <div class="newlist" id="newList"><div class="spin">読み込み中…</div></div>
+    <div id="selBar" hidden>
+      <span class="selcount" id="selCount">0件選択中</span>
+      <button type="button" id="selAllBtn">全選択</button>
+      <button type="button" id="selClearBtn">選択解除</button>
+      <button type="button" class="primary" id="selBulkBtn">選択した名刺に交換情報を設定</button>
+    </div>
   </section>
 
   <!-- 整理モード -->
@@ -1084,12 +1106,36 @@
     if(!newState.items.length){ box.innerHTML='<div class="empty"><b>該当なし</b></div>'; return; }
     box.innerHTML = newState.items.map(newRowHtml).join('');
     Array.prototype.forEach.call(box.querySelectorAll('.newrow'), function(row){
+      var area=row.querySelector('.selarea'), chk=row.querySelector('.chk');
+      // 選択エリア: 伝播を止めて詳細を開かせない（labelの既定動作でチェックだけ切り替わる）
+      ['click','pointerdown','touchend','mousedown'].forEach(function(t){
+        area.addEventListener(t, function(e){ e.stopPropagation(); });
+      });
+      chk.addEventListener('change', function(){ row.classList.toggle('sel', chk.checked); updateSelBar(); });
       row.addEventListener('click', function(e){
-        if(e.target.closest('.chk') || e.target.tagName==='INPUT' || e.target.closest('.snslink')) return;
+        if(e.target.closest('.selarea')) return; // 二重防御
+        if(e.target.closest('.snslink')) return;
+        if(getCheckedIds().length>0){ chk.checked=!chk.checked; row.classList.toggle('sel', chk.checked); updateSelBar(); return; }
         location.hash = '#person/'+row.getAttribute('data-id');
       });
     });
+    updateSelBar();
   }
+  function updateSelBar(){
+    var n=getCheckedIds().length;
+    EL('selBar').hidden = (n===0);
+    EL('selCount').textContent = n+'件選択中';
+  }
+  function setAllSelected(on){
+    Array.prototype.forEach.call(EL('newList').querySelectorAll('.newrow'), function(row){
+      var c=row.querySelector('.chk'); c.checked=on; row.classList.toggle('sel', on);
+    });
+    updateSelBar();
+  }
+  EL('selectAllTopBtn').onclick = function(){ setAllSelected(true); };
+  EL('selAllBtn').onclick = function(){ setAllSelected(true); };
+  EL('selClearBtn').onclick = function(){ setAllSelected(false); };
+  EL('selBulkBtn').onclick = function(){ if(getCheckedIds().length) openBulkModal(true); };
   function newRowHtml(p){
     var badges = p.organized ? '<span class="badge done">整理済</span>' : '<span class="badge">未整理</span>';
     if(p.lastEvent) badges += '<span class="badge">'+esc(p.lastEvent)+'</span>';
@@ -1097,7 +1143,7 @@
     if(p.snsChecked) badges += '<span class="badge dim">SNS✓</span>';
     var sub = [p.company, p.title].filter(Boolean).join(' / ');
     return '<div class="newrow" data-id="'+esc(p.id)+'">'
-      + '<input type="checkbox" class="chk" value="'+esc(p.id)+'">'
+      + '<label class="selarea" aria-label="選択"><input type="checkbox" class="chk" value="'+esc(p.id)+'"></label>'
       + '<div class="body"><div class="name2">'+esc(p.name||'(氏名不明)')+'</div>'
       + (sub?'<div class="sub2">'+esc(sub)+'</div>':'')
       + '<div class="sub2">取込 '+esc(fmtDate(p.importedAt))+'</div>'
@@ -1118,10 +1164,10 @@
   };
 
   // ---- 一括設定モーダル ----
-  EL('bulkOpenBtn').onclick = openBulkModal;
+  EL('bulkOpenBtn').onclick = function(){ openBulkModal(false); };
   var bulkApplying = false; // 二重送信防止フラグ
 
-  function openBulkModal(){
+  function openBulkModal(selectedOnly){
     var today = todayStr();
     var checkedIds = getCheckedIds();
     var prefillDate = EL('sessDate').value || today;
@@ -1131,9 +1177,11 @@
       + '<div class="fgroup"><label>名刺交換日</label><input type="date" id="bkDate" value="'+esc(prefillDate)+'"></div>'
       + '<div class="fgroup"><label>イベント名</label><input type="text" id="bkEvent" list="eventNamesList" value="'+esc(prefillEvent)+'"></div>'
       + '<div class="fgroup"><label>対象</label><div class="radiorow">'
-      + '<label><input type="radio" name="bkScope" value="batch" checked> 今回取込全件（'+newState.days+'日以内）</label>'
-      + '<label><input type="radio" name="bkScope" value="unset"> 未設定の名刺のみ</label>'
-      + '<label><input type="radio" name="bkScope" value="ids" '+(checkedIds.length?'':'disabled')+'> チェックした人物（'+checkedIds.length+'件）</label>'
+      + (selectedOnly
+        ? '<label><input type="radio" name="bkScope" value="ids" checked> 選択中の'+checkedIds.length+'件</label>'
+        : '<label><input type="radio" name="bkScope" value="batch" checked> 今回取込全件（'+newState.days+'日以内）</label>'
+        + '<label><input type="radio" name="bkScope" value="unset"> 未設定の名刺のみ</label>'
+        + '<label><input type="radio" name="bkScope" value="ids" '+(checkedIds.length?'':'disabled')+'> チェックした人物（'+checkedIds.length+'件）</label>')
       + '</div></div>'
       + '<div class="previewbox" id="bkPreview">「対象を確認」を押してください</div>'
       + '<div id="bkConfirmArea"></div>'
