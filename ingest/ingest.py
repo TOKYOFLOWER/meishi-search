@@ -38,6 +38,11 @@ from dotenv import load_dotenv
 from PIL import Image, ImageOps
 
 try:
+    import json_repair  # tool use が使えない場合の保険(壊れたJSONの修復)
+except ImportError:  # pragma: no cover
+    json_repair = None
+
+try:
     import pymupdf  # PDFレンダリング用。ingest/README.mdの手順でインストールする。
 except ImportError:  # pragma: no cover - 未インストール環境向けフォールバック
     pymupdf = None
@@ -50,6 +55,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ENV_PATH = SCRIPT_DIR / ".env"
 STATE_PATH = SCRIPT_DIR / "state.json"
 LOG_DIR = SCRIPT_DIR / "logs"
+LOCK_PATH = SCRIPT_DIR / "ingest.lock"
+LOCK_STALE_SECONDS = 2 * 60 * 60  # 2時間以上前のロックは破棄
+MOVE_RETRY_COUNT = 6  # 使用中ファイル(WinError 32)の移動リトライ回数
+MOVE_RETRY_SECONDS = 5
 
 TARGET_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf"}
 WRITE_IN_PROGRESS_SECONDS = 10  # 書込中とみなすmtime猶予秒数
@@ -89,9 +98,9 @@ CARD_KEYS = [
 
 SYSTEM_PROMPT = """\
 あなたは名刺OCRの専門家です。与えられた名刺の画像またはPDFから情報を正確に抽出し、
-JSONオブジェクトのみを返してください。説明文やコードフェンスは不要です。
+record_card ツールを呼び出して結果を返してください。説明文は不要です。
 
-出力するJSONのキーは次の通りです。
+ツールに渡す項目は次の通りです。
 - company: 会社名
 - name: 氏名（姓と名の間に半角スペースを1つ入れる）
 - kana: ふりがな、またはローマ字表記（記載があれば）
@@ -112,8 +121,24 @@ JSONオブジェクトのみを返してください。説明文やコードフ�
 - 日本語面と英語面の両方が写っている場合は、日本語表記の情報を優先すること。
 - 読み取れない項目は空文字列にすること。
 - PDFで複数ページが含まれる場合は、同一名刺の表面・裏面として情報を統合すること。
-- 出力はJSONオブジェクトのみとし、前後に説明文やMarkdownのコードフェンスを付けないこと。
+- 文字列中に二重引用符が含まれていても、そのまま値として渡して構いません（ツール入力として扱われます）。
 """
+
+# 抽出結果を構造化して受け取るためのツール定義(tool_choiceで強制し、自前のjson.loadsを避ける)
+CARD_TOOL_NAME = "record_card"
+CARD_TOOL = {
+    "name": CARD_TOOL_NAME,
+    "description": "名刺から抽出した情報を記録する。読み取れない項目は空文字列にする。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            **{k: {"type": "string"} for k in CARD_KEYS},
+            "confidence": {"type": "number", "description": "抽出結果全体の確信度(0〜1)"},
+            "notes": {"type": "string", "description": "読み取りに関する補足(無ければ空文字)"},
+        },
+        "required": CARD_KEYS + ["confidence", "notes"],
+    },
+}
 
 USER_PROMPT = (
     "この名刺（画像またはPDF）から情報を抽出し、指定されたJSON形式で出力してください。"
@@ -459,15 +484,18 @@ def is_retryable_anthropic_error(exc: Exception) -> bool:
     return False
 
 
-def call_claude(client: anthropic.Anthropic, model: str, content_block: dict[str, Any]) -> str:
-    """Claudeに1回だけリクエストを送り、テキスト部分を連結して返す。
+def call_claude(client: anthropic.Anthropic, model: str, content_block: dict[str, Any]) -> Any:
+    """Claudeに1回だけリクエストを送る。tool use(record_card)を強制し、その input(dict)を返す。
 
+    tool_use ブロックが無い場合はテキスト(str)を返す(呼び出し側で修復付きパースを試みる)。
     stop_reasonがrefusalの場合はExtractionErrorを送出する。
     """
     resp = client.messages.create(
         model=model,
         max_tokens=2048,
         system=SYSTEM_PROMPT,
+        tools=[CARD_TOOL],
+        tool_choice={"type": "tool", "name": CARD_TOOL_NAME},
         messages=[{
             "role": "user",
             "content": [content_block, {"type": "text", "text": USER_PROMPT}],
@@ -477,11 +505,13 @@ def call_claude(client: anthropic.Anthropic, model: str, content_block: dict[str
     if resp.stop_reason == "refusal":
         raise ExtractionError("refusal")
 
-    text = "".join(b.text for b in resp.content if b.type == "text")
-    return text
+    for blk in resp.content:
+        if blk.type == "tool_use" and getattr(blk, "name", CARD_TOOL_NAME) == CARD_TOOL_NAME:
+            return blk.input
+    return "".join(blk.text for blk in resp.content if blk.type == "text")
 
 
-def call_claude_with_retry(client: anthropic.Anthropic, model: str, content_block: dict[str, Any]) -> str:
+def call_claude_with_retry(client: anthropic.Anthropic, model: str, content_block: dict[str, Any]) -> Any:
     """Claude呼び出しを最大3回までリトライする(429/5xx/接続エラーのみ)。
 
     SDK自体もmax_retries=2で内部リトライするため、ここでの追加リトライは
@@ -507,6 +537,22 @@ def call_claude_with_retry(client: anthropic.Anthropic, model: str, content_bloc
     raise ExtractionError(f"API呼び出しに失敗しました(リトライ上限): {last_exc}") from last_exc
 
 
+def parse_json_text(raw_text: str) -> Any:
+    """テキスト応答をJSONとして読む(tool useが使えなかった場合の保険)。失敗時は json-repair で修復を試みる。"""
+    json_text = strip_json_fence(raw_text)
+    try:
+        return json.loads(json_text)
+    except json.JSONDecodeError as exc:
+        if json_repair is not None:
+            try:
+                repaired = json_repair.loads(json_text)
+                if isinstance(repaired, dict) and repaired:
+                    return repaired
+            except Exception:  # 修復も失敗した場合は元の例外を報告する
+                pass
+        raise ExtractionError(f"JSONパースに失敗しました: {exc}", raw_text=raw_text) from exc
+
+
 def extract_card_from_file(client: anthropic.Anthropic, model: str, path: Path) -> tuple[Optional[dict[str, Any]], str]:
     """名刺ファイルからClaudeで情報を抽出する。
 
@@ -517,19 +563,20 @@ def extract_card_from_file(client: anthropic.Anthropic, model: str, path: Path) 
 
     raw_text = ""
     try:
-        raw_text = call_claude_with_retry(client, model, content_block)
+        result = call_claude_with_retry(client, model, content_block)
     except ExtractionError as exc:
         exc.raw_text = exc.raw_text or raw_text
         raise
 
-    if not raw_text or not raw_text.strip():
-        raise ExtractionError("Claudeからのレスポンスが空です", raw_text=raw_text)
-
-    json_text = strip_json_fence(raw_text)
-    try:
-        parsed = json.loads(json_text)
-    except json.JSONDecodeError as exc:
-        raise ExtractionError(f"JSONパースに失敗しました: {exc}", raw_text=raw_text) from exc
+    if isinstance(result, dict):
+        # tool use の input は既にパース済み。ログ用に文字列化して保持する
+        parsed = result
+        raw_text = json.dumps(result, ensure_ascii=False)
+    else:
+        raw_text = result or ""
+        if not raw_text.strip():
+            raise ExtractionError("Claudeからのレスポンスが空です", raw_text=raw_text)
+        parsed = parse_json_text(raw_text)
 
     if not isinstance(parsed, dict):
         raise ExtractionError("Claudeの応答がJSONオブジェクトではありません", raw_text=raw_text)
@@ -635,13 +682,38 @@ def unique_dest_path(dest_dir: Path, filename: str) -> Path:
         i += 1
 
 
+class MoveBusyError(Exception):
+    """ファイルが他プロセスに使用中で移動できなかったことを表す例外。移動元は変更されない。"""
+
+
+def safe_move(src: Path, dest: Path) -> None:
+    """os.replace で移動する。WinError 32(使用中)は MOVE_RETRY_SECONDS 秒おきに最大 MOVE_RETRY_COUNT 回リトライ。
+
+    shutil.move は rename失敗時にコピー→削除へフォールバックして複製を残すため使わない。
+    最終的に失敗した場合は MoveBusyError を送出し、移動先には何も残さない。
+    """
+    logger = logging.getLogger("ingest")
+    for attempt in range(MOVE_RETRY_COUNT):
+        try:
+            os.replace(str(src), str(dest))
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in (32, 5, None):
+                raise
+            if attempt < MOVE_RETRY_COUNT - 1:
+                logger.info("ファイル使用中のため%d秒後に移動をリトライします(%d/%d): %s",
+                            MOVE_RETRY_SECONDS, attempt + 1, MOVE_RETRY_COUNT, src.name)
+                time.sleep(MOVE_RETRY_SECONDS)
+    raise MoveBusyError(f"使用中のため移動できませんでした: {src.name}")
+
+
 def move_to_done(path: Path, watch_dir: Path, duplicate: bool, now: datetime) -> Path:
     """成功したファイルを WATCH_DIR/done/YYYYMM/ に移動する。"""
     yyyymm = now.strftime("%Y%m")
     dest_dir = watch_dir / "done" / yyyymm
     filename = f"dup_{path.name}" if duplicate else path.name
     dest = unique_dest_path(dest_dir, filename)
-    shutil.move(str(path), str(dest))
+    safe_move(path, dest)
     return dest
 
 
@@ -649,7 +721,7 @@ def move_to_error(path: Path, watch_dir: Path, reason: str, raw_text: str, now: 
     """失敗したファイルを WATCH_DIR/error/ に移動し、同名+.logを残す。"""
     dest_dir = watch_dir / "error"
     dest = unique_dest_path(dest_dir, path.name)
-    shutil.move(str(path), str(dest))
+    safe_move(path, dest)
 
     log_path = dest.with_suffix(dest.suffix + ".log")
     log_lines = [
@@ -662,6 +734,84 @@ def move_to_error(path: Path, watch_dir: Path, reason: str, raw_text: str, now: 
         f.write("\n".join(log_lines) + "\n")
 
     return dest
+
+
+# --------------------------------------------------------------------------
+# 多重起動ロック
+# --------------------------------------------------------------------------
+
+def _pid_alive(pid: int) -> bool:
+    """PIDのプロセスが生存しているか。Windowsでは os.kill(pid, 0) が TerminateProcess になるため使わない。"""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            if not ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True
+            return code.value == STILL_ACTIVE
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def acquire_lock(lock_path: Path = LOCK_PATH) -> bool:
+    """ロックファイルを排他作成する。実行中の別プロセスがあれば False(=スキップ)。
+
+    PIDが死んでいる／2時間以上前のロックは破棄して続行する。
+    """
+    logger = logging.getLogger("ingest")
+    for _ in range(2):
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            pid = 0
+            started = 0.0
+            try:
+                parts = lock_path.read_text(encoding="utf-8").split()
+                pid = int(parts[0])
+                started = float(parts[1])
+            except (OSError, ValueError, IndexError):
+                pass
+            try:
+                age = time.time() - (started or lock_path.stat().st_mtime)
+            except OSError:
+                age = LOCK_STALE_SECONDS
+            if pid and _pid_alive(pid) and age < LOCK_STALE_SECONDS:
+                logger.info("実行中のためスキップします(PID=%d)", pid)
+                return False
+            logger.info("古いロックを破棄します(PID=%s, 経過%d秒)", pid, int(age))
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            continue
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"{os.getpid()} {time.time():.0f}\n")
+        return True
+    return False
+
+
+def release_lock(lock_path: Path = LOCK_PATH) -> None:
+    """自分のPIDのロックだけを削除する。"""
+    try:
+        parts = lock_path.read_text(encoding="utf-8").split()
+        if parts and int(parts[0]) == os.getpid():
+            lock_path.unlink()
+    except (OSError, ValueError):
+        pass
 
 
 # --------------------------------------------------------------------------
@@ -735,7 +885,8 @@ def process_file(
             sizes = {side: {k: len(v) for k, v in sides.items()} for side, sides in images.items()}
             print(json.dumps({"images_base64_length": sizes}, ensure_ascii=False, indent=2))
         # 一覧用サムネの生成・送信はdry-runではスキップする(件数のみ後段でまとめて報告)
-        logger.info("ok(dry-run) | %s | %s | %s | listThumb=生成・送信スキップ", path.name, card["company"], card["name"])
+        logger.info("ok(dry-run) | %s | %s | %s | title=%s | confidence=%s | listThumb=生成・送信スキップ",
+                    path.name, card["company"], card["name"], card["title"] or "(空)", parsed.get("confidence", "?"))
         return "ok"
 
     list_thumb_b64 = build_list_thumb_b64(path)
@@ -756,7 +907,9 @@ def process_file(
     move_to_done(path, cfg.watch_dir, duplicate, now)
 
     status = "dup" if duplicate else "ok"
-    logger.info("%s | %s | %s | %s | row=%s", status, path.name, card["company"], card["name"], row)
+    logger.info("%s | %s | %s | %s | row=%s | title=%s | confidence=%s | thumb=%s",
+                status, path.name, card["company"], card["name"], row, card["title"] or "(空)",
+                parsed.get("confidence", "?"), "送信(thumbFileIdはGASが記録)" if list_thumb_b64 else "なし")
 
     record_state(status, row)
     return status
@@ -781,11 +934,16 @@ def run_scan_once(client: anthropic.Anthropic, cfg: Config, dry_run: bool) -> bo
     for path in files:
         try:
             result = process_file(client, cfg, state, path, dry_run=dry_run, skip_write_check=False)
+        except MoveBusyError as exc:  # 使用中: 移動も state 記録もせず次回に回す
+            logger.warning("skip | %s | %s(次回の実行で再処理します)", path.name, exc)
+            result = "skip"
         except Exception as exc:  # 予期しない例外はログに残して次のファイルへ
             logger.exception("予期しないエラー: %s: %s", path.name, exc)
             result = "error"
         if result == "error":
             all_ok = False
+        elif result == "skip":
+            continue
         elif result == "ok":
             ok_count += 1
 
@@ -1077,24 +1235,40 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     if args.backfill:
-        ok = run_backfill(cfg, dry_run=args.dry_run)
-        return 0 if ok else 1
+        if args.dry_run:
+            return 0 if run_backfill(cfg, dry_run=True) else 1
+        if not acquire_lock():
+            return 0
+        try:
+            return 0 if run_backfill(cfg, dry_run=False) else 1
+        finally:
+            release_lock()
 
     client = anthropic.Anthropic(max_retries=2)
 
-    if args.file:
-        ok = run_single_file(client, cfg, Path(args.file), dry_run=args.dry_run)
-        return 0 if ok else 1
+    # 書き込みを伴う実行は多重起動を防ぐ(dry-runは何も書かないのでロック不要)
+    locked = False
+    if not args.dry_run:
+        if not acquire_lock():
+            return 0
+        locked = True
+    try:
+        if args.file:
+            ok = run_single_file(client, cfg, Path(args.file), dry_run=args.dry_run)
+            return 0 if ok else 1
 
-    if args.watch:
-        run_watch(client, cfg)
+        if args.watch:
+            run_watch(client, cfg)
+            return 0
+
+        # --dry-run 単独 または --once(既定) または何も指定なし
+        all_ok = run_scan_once(client, cfg, dry_run=args.dry_run)
+        if args.dry_run:
+            return 0 if all_ok else 1
         return 0
-
-    # --dry-run 単独 または --once(既定) または何も指定なし
-    all_ok = run_scan_once(client, cfg, dry_run=args.dry_run)
-    if args.dry_run:
-        return 0 if all_ok else 1
-    return 0
+    finally:
+        if locked:
+            release_lock()
 
 
 if __name__ == "__main__":

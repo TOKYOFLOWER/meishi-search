@@ -3,3 +3,4 @@ python-dotenv
 requests
 Pillow
 pymupdf
+json-repair
