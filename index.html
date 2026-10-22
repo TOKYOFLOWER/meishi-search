@@ -2831,6 +2831,7 @@
         var chunk = ids.slice(i, i + chunkSize);
         var r = await api('purgeCards', { ids:chunk }, { silent:true });
         if(r && r.error === 'auth'){ hideBusy(); doLogout(); return; }
+        if(r && r.error === 'backup_failed'){ hideBusy(); closeModal(); renderTrash_(); toast('バックアップに失敗したため完全削除を中止しました'); return; }
         if(!r || !r.ok){ failed = true; break; }
         done += r.data.purged; hist += r.data.historyRowsRemoved; files += r.data.filesTrashed; person += r.data.personRowsRemoved;
         var gone = {}; chunk.forEach(function(id){ gone[id] = true; delete trashSel[id]; });

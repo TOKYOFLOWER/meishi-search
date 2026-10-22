@@ -2754,6 +2754,10 @@ function purgeCards_(body) {
     var missing = ids.filter(function (x) { return !foundIds[x]; });
     if (missing.length) return { ok: false, error: 'not_in_trash', count: missing.length };
 
+    // 0) 完全削除の前に、当日分のシート丸ごとバックアップを確保する（無ければ作成。失敗したら何も削除しない）
+    var bk = ensurePrepurgeBackup_();
+    if (!bk.ok) return { ok: false, error: 'backup_failed' };
+
     // 1) 接触履歴の行を削除（下から）
     var histRemoved = 0;
     var hsh = ss_().getSheetByName(HISTORY_SHEET);
@@ -2795,6 +2799,24 @@ function purgeCards_(body) {
     return { ok: true, data: { purged: targets.length, historyRowsRemoved: histRemoved,
       personRowsRemoved: personRemoved, filesTrashed: filesTrashed, fileErrors: fileErrors } };
   } finally { lock.releaseLock(); }
+}
+// 完全削除前の自動バックアップ「名刺DB_backup_prepurge_YYYYMMDD」。同じ日は既存のものを使い回す。
+// 新規作成したファイルIDは Script Properties の LAST_PREPURGE_BACKUP に記録する。
+function ensurePrepurgeBackup_() {
+  try {
+    var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd');
+    var name = '名刺DB_backup_prepurge_' + stamp;
+    var it = DriveApp.getFilesByName(name);
+    if (it.hasNext()) return { ok: true, created: false, id: it.next().getId() };
+    var copy = DriveApp.getFileById(SPREADSHEET_ID).makeCopy(name);
+    var id = copy.getId();
+    PropertiesService.getScriptProperties().setProperty('LAST_PREPURGE_BACKUP', id);
+    Logger.log('完全削除前バックアップ作成: ' + name + ' (' + id + ')');
+    return { ok: true, created: true, id: id };
+  } catch (e) {
+    Logger.log('完全削除前バックアップに失敗: ' + e);
+    return { ok: false };
+  }
 }
 // 行番号の配列（1始まり）を、連続する範囲ごとにまとめて下から削除する
 function deleteRowsDesc_(sh, rows) {
