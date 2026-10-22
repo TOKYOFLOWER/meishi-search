@@ -100,6 +100,16 @@ function doPost(e) {
       out = listLite_(body);
     } else if (body.action === 'listDelta') {
       out = listDelta_(body);
+    } else if (body.action === 'searchText') {
+      out = searchText_(body);
+    } else if (body.action === 'deleteCards') {
+      out = deleteCards_(body);
+    } else if (body.action === 'restoreCards') {
+      out = restoreCards_(body);
+    } else if (body.action === 'listTrash') {
+      out = listTrash_(body);
+    } else if (body.action === 'purgeCards') {
+      out = purgeCards_(body);
     } else if (body.action === 'getThumbs') {
       out = getThumbs_(body);
     } else if (body.action === 'setThumb') {
@@ -272,7 +282,12 @@ function colIndex_(header) {
 }
 // 名刺DB のうち names の列だけを読む（ヘッダ1行 + 連続する列ブロックごとに getValues）。
 // 戻り値の rows は全ヘッダ幅の疎な配列（読んでいない列は ''）なので c[name] で従来どおり参照できる。
-var CARD_LIST_COLS = ['id', '会社名', '部署名', '役職', '役職レベル', '氏名', '業種', '都道府県', '名刺交換日', '取込日', 'importBatchId'];
+var CARD_LIST_COLS = ['id', '会社名', '部署名', '役職', '役職レベル', '氏名', '業種', '都道府県', '名刺交換日', '取込日', 'importBatchId', 'deletedAt'];
+// 論理削除(ゴミ箱): 名刺DB末尾の deletedAt 列に日時が入っている行は「削除済み」。空＝有効。
+var DELETED_COL = 'deletedAt';
+function isDeletedRow_(r, c) {
+  return c[DELETED_COL] !== undefined && String(r[c[DELETED_COL]] == null ? '' : r[c[DELETED_COL]]).trim() !== '';
+}
 function readCards_(names) {
   var sh = getSheet_();
   var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
@@ -430,7 +445,10 @@ function findRowByContactId_(d, id) {
 function getFilters(pre) {
   var d = (pre && pre.cards) || readCards_(CARD_LIST_COLS), c = colIndex_(d.header);
   var prefs = {}, inds = {}, roles = {};
+  var total = 0;
   d.rows.forEach(function (r) {
+    if (isDeletedRow_(r, c)) return;
+    total++;
     var p = r[c['都道府県']]; if (p) prefs[p] = (prefs[p] || 0) + 1;
     var ind = r[c['業種']]; if (ind) inds[ind] = (inds[ind] || 0) + 1;
     var rl = r[c['役職レベル']]; if (rl) roles[rl] = (roles[rl] || 0) + 1;
@@ -439,7 +457,7 @@ function getFilters(pre) {
     return Object.keys(o).sort(function (a, b) { return o[b] - o[a]; })
       .map(function (k) { return { name: k, count: o[k] }; });
   };
-  return { total: d.rows.length, prefs: sortByCount(prefs),
+  return { total: total, prefs: sortByCount(prefs),
     industries: sortByCount(inds), roles: sortByCount(roles) };
 }
 
@@ -502,6 +520,7 @@ function searchCards(q) {
   var hits = [];
   for (var i = 0; i < d.rows.length; i++) {
     var r = d.rows[i];
+    if (isDeletedRow_(r, c)) continue;
     if (pref && r[c['都道府県']] !== pref) continue;
     if (ind && r[c['業種']] !== ind) continue;
     if (role && r[c['役職レベル']] !== role) continue;
@@ -1146,10 +1165,13 @@ function computeStats_(pre) {
   var cardsD = (pre && pre.cards) || readCards_(CARD_LIST_COLS), cc = colIndex_(cardsD.header);
   var today = Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
   var windowStart = addDaysIso_(today, -(days - 1));
-  var total = cardsD.rows.length;
+  var total = 0;
+  var deletedSet = {};
 
   var newIds = {};
   cardsD.rows.forEach(function (r) {
+    if (isDeletedRow_(r, cc)) { deletedSet[String(r[cc['id']])] = true; return; }
+    total++;
     var iso = isoDate_(r[cc['取込日']]);
     if (iso && iso >= windowStart && iso <= today) newIds[String(r[cc['id']])] = true;
   });
@@ -1164,7 +1186,7 @@ function computeStats_(pre) {
   });
 
   var hm = (pre && pre.hm) || loadHistoryMap_();
-  var followCount = Object.keys(followDueSet_(pm, hm)).length;
+  var followCount = Object.keys(followDueSet_(pm, hm)).filter(function (id) { return !deletedSet[id]; }).length;
   Logger.log('stats: ' + (Date.now() - t0) + 'ms');
 
   return { total: total, newCount: newCount, unorganizedCount: unorganizedCount, followCount: followCount, days: days };
@@ -1184,6 +1206,7 @@ function getNewCards_(input, pre) {
 
   var matched = [];
   d.rows.forEach(function (r) {
+    if (isDeletedRow_(r, c)) return;
     var iso = isoDate_(r[c['取込日']]);
     if (!iso || iso < windowStart || iso > today) return;
     var id = String(r[c['id']]);
@@ -1607,10 +1630,11 @@ function cardImage_(input) {
 
 // 画像未登録で備考に元ファイル名（scan:<name>）がある人物の一覧（バックフィル用）
 function cardsWithoutImage_() {
-  var d = readCards_(['id', '備考', 'imageFrontId', 'imageFrontThumbId']), c = colIndex_(d.header);
+  var d = readCards_(['id', '備考', 'imageFrontId', 'imageFrontThumbId', DELETED_COL]), c = colIndex_(d.header);
   var items = [];
   if (c['備考'] === undefined) return { items: items };
   d.rows.forEach(function (r) {
+    if (isDeletedRow_(r, c)) return;
     var front = c['imageFrontId'] !== undefined ? String(r[c['imageFrontId']] || '').trim() : '';
     var thumb = c['imageFrontThumbId'] !== undefined ? String(r[c['imageFrontThumbId']] || '').trim() : '';
     if (front || thumb) return;
@@ -1626,10 +1650,11 @@ function cardsWithoutImage_() {
 
 // 一覧用サムネ(thumbFileId)が未登録で備考に元ファイル名(scan:<name>)がある人物の一覧（backfill用）
 function cardsWithoutThumb_() {
-  var d = readCards_(['id', '備考', THUMB_COL]), c = colIndex_(d.header);
+  var d = readCards_(['id', '備考', THUMB_COL, DELETED_COL]), c = colIndex_(d.header);
   var items = [];
   if (c['備考'] === undefined) return { items: items };
   d.rows.forEach(function (r) {
+    if (isDeletedRow_(r, c)) return;
     var thumb = c[THUMB_COL] !== undefined ? String(r[c[THUMB_COL]] || '').trim() : '';
     if (thumb) return;
     var biko = String(r[c['備考']] || '');
@@ -1793,35 +1818,67 @@ function listLiteVersion_() {
 function bumpListVersion_() {
   try { PropertiesService.getScriptProperties().setProperty(LIST_VERSION_PROP, String(Date.now())); } catch (e) { /* noop */ }
 }
-// キー名は短縮(id/n/c/t/d/th)。3,862件で内訳キー分の無駄な冗長性を減らすため。フロント側で展開する。
+// キー名は短縮。フロントで展開して検索用文字列を1回だけ作る。空の項目はキーごと省略して転送量を抑える。
+//   id,n(氏名),c(会社),t(役職),d(交換日),th(サムネ)
+//   k(よみ=備考の「かな:」),e(メール),p(電話=会社TEL+携帯を数字のみに),a(都道府県+市区),
+//   i(業種),ev(接触履歴のイベント名・重複除去、スペース区切り),tg(タグ名の配列)
+// 削除済み(deletedAt あり)の行は items に含めず、id を deletedIds に集める。
 function buildListLite_() {
-  var d = readCards_(['id', '氏名', '会社名', '役職', '名刺交換日', THUMB_COL]), c = colIndex_(d.header);
-  return d.rows.map(function (r) {
-    return {
-      id: String(r[c['id']] || ''),
+  var d = readCards_(['id', '氏名', '会社名', '役職', '名刺交換日', THUMB_COL, 'メール', '会社TEL', '携帯',
+    '都道府県', '市区町村', '業種', '備考', DELETED_COL]);
+  var c = colIndex_(d.header);
+  var pm = loadPersonMap_(), hm = loadHistoryMap_();
+  var evById = {};
+  Object.keys(hm.byId).forEach(function (id) {
+    var seen = {}, names = [];
+    hm.byId[id].forEach(function (r) {
+      var en = String(r[hm.c['eventName']] || '').trim();
+      if (en && !seen[en]) { seen[en] = true; names.push(en); }
+    });
+    if (names.length) evById[id] = names.join(' ');
+  });
+  var S = function (r, name) { return c[name] !== undefined ? String(r[c[name]] == null ? '' : r[c[name]]) : ''; };
+  var items = [], deletedIds = [];
+  d.rows.forEach(function (r) {
+    var id = String(r[c['id']] || '');
+    if (isDeletedRow_(r, c)) { if (id) deletedIds.push(id); return; }
+    var o = {
+      id: id,
       n: String(r[c['氏名']] || ''),
       c: String(r[c['会社名']] || ''),
       t: String(r[c['役職']] || ''),
       d: pickExchangedFast_(r[c['名刺交換日']]),
       th: c[THUMB_COL] !== undefined ? String(r[c[THUMB_COL]] || '') : ''
     };
+    var km = S(r, '備考').match(/かな:(.*)$/);
+    if (km && km[1].trim()) o.k = km[1].trim();
+    var em = S(r, 'メール').trim(); if (em) o.e = em;
+    var tel = (S(r, '会社TEL').replace(/\D/g, '') + ' ' + S(r, '携帯').replace(/\D/g, '')).trim(); if (tel) o.p = tel;
+    var ad = (S(r, '都道府県') + S(r, '市区町村')).trim(); if (ad) o.a = ad;
+    var ind = S(r, '業種').trim(); if (ind) o.i = ind;
+    if (evById[id]) o.ev = evById[id];
+    var pr = pm.byId[id];
+    if (pr) { var tg = parseTags_(pr[pm.c['tags']]); if (tg.length) o.tg = tg; }
+    items.push(o);
   });
+  return { items: items, deletedIds: deletedIds };
 }
 // 3,862件だと数百KBになりCacheServiceの1値100KB上限に収まらない(gzipしても収まらないことが多い)ため、
 // 無駄なgzip試行で実行時間を浪費しないようキャッシュはせず毎回シートから組み立てる。
 function listLiteData_() {
-  return { items: buildListLite_(), version: listLiteVersion_() };
+  var b = buildListLite_();
+  return { items: b.items, deletedIds: b.deletedIds, version: listLiteVersion_() };
 }
 function listLite_(body) {
   var d = listLiteData_();
-  return { ok: true, data: { items: d.items, version: d.version } };
+  return { ok: true, data: { items: d.items, deletedIds: d.deletedIds, version: d.version } };
 }
 function listDelta_(body) {
   var since = String((body && body.sinceVersion) || '');
   var version = listLiteVersion_();
   if (since && since === version) return { ok: true, data: { changed: false, version: version } };
   var d = listLiteData_();
-  return { ok: true, data: { changed: true, items: d.items, version: d.version } };
+  return { ok: true, data: { changed: true, items: d.items, deletedIds: d.deletedIds, version: d.version } };
 }
 // ids(最大30) → {id: base64jpeg}。id は listLite が返す thumbFileId（既存の私的Driveフォルダのファイル）
 function getThumbs_(body) {
@@ -1887,6 +1944,7 @@ function resolveBulkTargets_(input) {
   var scope = input.scope;
 
   var inWindow = function (r) {
+    if (isDeletedRow_(r, c)) return false;
     if (batchId) return c[BATCH_COL] !== undefined && String(r[c[BATCH_COL]] || '') === batchId;
     var iso = isoDate_(r[c['取込日']]);
     return !!iso && iso >= windowStart && iso <= today;
@@ -1896,7 +1954,7 @@ function resolveBulkTargets_(input) {
   if (scope === 'ids') {
     var idSet = {};
     (input.ids || []).forEach(function (x) { idSet[String(x)] = true; });
-    d.rows.forEach(function (r, idx) { if (idSet[String(r[c['id']])]) targets.push({ row: idx + 2, r: r }); });
+    d.rows.forEach(function (r, idx) { if (idSet[String(r[c['id']])] && !isDeletedRow_(r, c)) targets.push({ row: idx + 2, r: r }); });
   } else if (scope === 'unset') {
     d.rows.forEach(function (r, idx) {
       if (!inWindow(r)) return;
@@ -2512,3 +2570,234 @@ function backupSheet_() {
   return copy.getId();
 }
 function runBackupSheet() { return backupSheet_(); }
+
+
+/* ==================================================================
+ *  メモ・履歴の本文検索（searchText）
+ * ================================================================== */
+// フロントの正規化(NFKC→小文字→カタカナをひらがな→空白・ハイフン・括弧除去)と同じ手順
+function normSearch_(s) {
+  s = String(s == null ? '' : s);
+  try { s = s.normalize('NFKC'); } catch (e) { /* noop */ }
+  s = s.toLowerCase().replace(/[ァ-ヶ]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0x60); });
+  return s.replace(/[\s　()\[\]{}<>「」『』【】〔〕〈〉《》\-‐-―−－]/g, '');
+}
+// 接触履歴(memo/eventName)・人物管理(memo/needs/nextAction)の本文を部分一致で検索し、名刺IDの配列だけ返す。
+// スペース区切りの複数語は AND（名刺ごとに本文をまとめて判定）。上限200件。削除済み名刺は除外。
+function searchText_(body) {
+  var raw = String((body && body.q) || '').trim();
+  if (!raw) return { ok: true, data: { ids: [], limited: false } };
+  var words = raw.split(/[\s　]+/).map(normSearch_).filter(function (w) { return w; });
+  if (!words.length) return { ok: true, data: { ids: [], limited: false } };
+  var blobs = {}, order = [];
+  var add = function (id, text) {
+    if (!id || !text) return;
+    if (blobs[id] === undefined) { blobs[id] = []; order.push(id); }
+    blobs[id].push(normSearch_(text));
+  };
+  var hm = loadHistoryMap_();
+  Object.keys(hm.byId).forEach(function (id) {
+    hm.byId[id].forEach(function (r) {
+      add(id, String(r[hm.c['memo']] || '') + ' ' + String(r[hm.c['eventName']] || ''));
+    });
+  });
+  var pm = loadPersonMap_();
+  pm.rows.forEach(function (r) {
+    var id = String(r[pm.c['contactId']]);
+    ['memo', 'needs', 'nextAction'].forEach(function (f) {
+      if (pm.c[f] !== undefined) add(id, String(r[pm.c[f]] || ''));
+    });
+  });
+  var cd = readCards_(['id', DELETED_COL]), cc = colIndex_(cd.header);
+  var alive = {};
+  cd.rows.forEach(function (r) { if (!isDeletedRow_(r, cc)) alive[String(r[cc['id']])] = true; });
+  var ids = [], limited = false;
+  for (var i = 0; i < order.length; i++) {
+    var id = order[i];
+    if (!alive[id]) continue;
+    var text = blobs[id].join(' ');
+    var ok = words.every(function (w) { return text.indexOf(w) >= 0; });
+    if (!ok) continue;
+    if (ids.length >= RESULT_LIMIT) { limited = true; break; }
+    ids.push(id);
+  }
+  return { ok: true, data: { ids: ids, limited: limited } };
+}
+
+/* ==================================================================
+ *  削除（ゴミ箱方式）: deleteCards / restoreCards / listTrash / purgeCards
+ *  論理削除 = 名刺DB末尾 deletedAt 列に日時を入れる。purge だけが行・履歴・画像に触る。
+ *  書き込み系は LockService で直列化し、完了後に bootstrap キャッシュ破棄＋一覧 version を更新する。
+ * ================================================================== */
+var PURGE_MAX_IDS = 100; // 1回の purgeCards で処理する最大件数（行削除が重いため）
+
+// deletedAt 列が無ければ末尾に追加し、列全体をプレーンテキスト書式にする。0始まりの列番号を返す
+function ensureDeletedCol_(sh) {
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var header = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var c = colIndex_(header);
+  if (c[DELETED_COL] !== undefined) return c[DELETED_COL];
+  sh.getRange(1, header.length + 1).setValue(DELETED_COL);
+  sh.getRange(1, header.length + 1, Math.max(sh.getMaxRows(), 2), 1).setNumberFormat('@');
+  return header.length;
+}
+// GASエディタから手動実行用（列だけ先に作る。deleteCards でも自動作成されるので必須ではない）
+function setupDeletedColumn() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var idx = ensureDeletedCol_(getSheet_());
+    Logger.log('deletedAt 列: ' + (idx + 1) + ' 列目');
+    return idx + 1;
+  } finally { lock.releaseLock(); }
+}
+function idsFromBody_(body, max) {
+  var arr = Array.isArray(body && body.ids) ? body.ids : [];
+  var seen = {}, out = [];
+  arr.forEach(function (x) { var s = String(x == null ? '' : x).trim(); if (s && !seen[s]) { seen[s] = true; out.push(s); } });
+  return max ? out.slice(0, max) : out;
+}
+
+// 論理削除/復元の共通処理。value = 日時 or ''
+function setDeletedAt_(ids, value) {
+  var sh = getSheet_();
+  var col = ensureDeletedCol_(sh);
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return { changed: 0, notFound: ids.length, skipped: 0 };
+  var n = lastRow - 1;
+  var idHeader = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  var idCol = colIndex_(idHeader)['id'];
+  var idVals = sh.getRange(2, idCol + 1, n, 1).getValues();
+  var delRange = sh.getRange(2, col + 1, n, 1);
+  var delVals = delRange.getValues();
+  var want = {}; ids.forEach(function (x) { want[x] = true; });
+  var changed = 0, skipped = 0, found = {};
+  for (var i = 0; i < n; i++) {
+    var id = String(idVals[i][0]);
+    if (!want[id]) continue;
+    found[id] = true;
+    var cur = String(delVals[i][0] == null ? '' : delVals[i][0]).trim();
+    if (value === '' ? cur === '' : cur !== '') { skipped++; continue; } // 既に目的の状態
+    delVals[i][0] = value;
+    changed++;
+  }
+  if (changed) delRange.setValues(delVals);
+  var notFound = ids.filter(function (x) { return !found[x]; }).length;
+  return { changed: changed, notFound: notFound, skipped: skipped };
+}
+function deleteCards_(body) {
+  var ids = idsFromBody_(body, 500);
+  if (!ids.length) return { ok: false, error: 'missing_ids' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var r = setDeletedAt_(ids, nowStamp_());
+    invalidateBootstrapCache_();
+    return { ok: true, data: { deleted: r.changed, notFound: r.notFound, alreadyDeleted: r.skipped } };
+  } finally { lock.releaseLock(); }
+}
+function restoreCards_(body) {
+  var ids = idsFromBody_(body, 500);
+  if (!ids.length) return { ok: false, error: 'missing_ids' };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var r = setDeletedAt_(ids, '');
+    invalidateBootstrapCache_();
+    return { ok: true, data: { restored: r.changed, notFound: r.notFound } };
+  } finally { lock.releaseLock(); }
+}
+// ゴミ箱の一覧 {id,n,c,t,deletedAt}（新しく削除した順）
+function listTrash_(body) {
+  var d = readCards_(['id', '氏名', '会社名', '役職', DELETED_COL]), c = colIndex_(d.header);
+  var items = [];
+  d.rows.forEach(function (r) {
+    if (!isDeletedRow_(r, c)) return;
+    var v = r[c[DELETED_COL]];
+    var at = v instanceof Date ? Utilities.formatDate(v, 'JST', 'yyyy-MM-dd HH:mm:ss') : String(v).trim();
+    items.push({ id: String(r[c['id']] || ''), n: String(r[c['氏名']] || ''), c: String(r[c['会社名']] || ''),
+      t: String(r[c['役職']] || ''), deletedAt: at });
+  });
+  items.sort(function (a, b) { return a.deletedAt < b.deletedAt ? 1 : (a.deletedAt > b.deletedAt ? -1 : 0); });
+  return { ok: true, data: { items: items } };
+}
+// ゴミ箱内(deletedAt あり)の行だけを対象にする。1件でもゴミ箱外のIDが混ざっていれば全体を拒否する。
+// 名刺DBの行を削除、Drive の画像/サムネは setTrashed(true)（Driveのゴミ箱に30日残る）、
+// 接触履歴の該当行を削除。人物管理は触らず、人物レコードを持っていた件数だけ返す。
+function purgeCards_(body) {
+  var ids = idsFromBody_(body, 0);
+  if (!ids.length) return { ok: false, error: 'missing_ids' };
+  if (ids.length > PURGE_MAX_IDS) return { ok: false, error: 'too_many', max: PURGE_MAX_IDS };
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sh = getSheet_();
+    var lastCol = sh.getLastColumn(), lastRow = sh.getLastRow();
+    var header = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+    var c = colIndex_(header);
+    if (c[DELETED_COL] === undefined || lastRow < 2) return { ok: false, error: 'not_in_trash', count: ids.length };
+    var all = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var want = {}; ids.forEach(function (x) { want[x] = true; });
+    var targets = []; // {row, id, files[]}
+    var foundIds = {};
+    for (var i = 0; i < all.length; i++) {
+      var id = String(all[i][c['id']]);
+      if (!want[id]) continue;
+      if (!isDeletedRow_(all[i], c)) return { ok: false, error: 'not_in_trash', count: 1 };
+      var files = [];
+      IMAGE_COLS.concat([THUMB_COL]).forEach(function (name) {
+        if (c[name] !== undefined) { var f = String(all[i][c[name]] || '').trim(); if (f) files.push(f); }
+      });
+      targets.push({ row: i + 2, id: id, files: files });
+      foundIds[id] = true;
+    }
+    var missing = ids.filter(function (x) { return !foundIds[x]; });
+    if (missing.length) return { ok: false, error: 'not_in_trash', count: missing.length };
+
+    // 人物レコードが残る件数（名刺が0枚になった人物。人物管理自体は触らない）
+    var orphanPersons = 0;
+    try {
+      var pd = readSheet_(PERSON_SHEET);
+      pd.rows.forEach(function (r) { if (foundIds[String(r[pd.c['contactId']])]) orphanPersons++; });
+    } catch (e) { /* 人物管理なし */ }
+
+    // 1) 接触履歴の行を削除（下から）
+    var histRemoved = 0;
+    var hsh = ss_().getSheetByName(HISTORY_SHEET);
+    if (hsh && hsh.getLastRow() >= 2) {
+      var hh = hsh.getRange(1, 1, 1, hsh.getLastColumn()).getValues()[0];
+      var hci = colIndex_(hh)['contactId'];
+      var hv = hsh.getRange(2, hci + 1, hsh.getLastRow() - 1, 1).getValues();
+      var hrows = [];
+      for (var j = 0; j < hv.length; j++) { if (foundIds[String(hv[j][0])]) hrows.push(j + 2); }
+      histRemoved = hrows.length;
+      deleteRowsDesc_(hsh, hrows);
+    }
+
+    // 2) 名刺DBの行を削除（下から）
+    deleteRowsDesc_(sh, targets.map(function (t) { return t.row; }));
+
+    // 3) Drive の画像・サムネをゴミ箱へ（行削除後。失敗しても処理は継続）
+    var filesTrashed = 0, fileErrors = 0;
+    targets.forEach(function (t) {
+      t.files.forEach(function (fid) {
+        try { DriveApp.getFileById(fid).setTrashed(true); filesTrashed++; }
+        catch (e) { fileErrors++; Logger.log('purge: 画像のゴミ箱移動に失敗 ' + fid + ' ' + e); }
+      });
+    });
+    invalidateBootstrapCache_();
+    return { ok: true, data: { purged: targets.length, historyRowsRemoved: histRemoved,
+      filesTrashed: filesTrashed, fileErrors: fileErrors, orphanPersons: orphanPersons } };
+  } finally { lock.releaseLock(); }
+}
+// 行番号の配列（1始まり）を、連続する範囲ごとにまとめて下から削除する
+function deleteRowsDesc_(sh, rows) {
+  rows = rows.slice().sort(function (a, b) { return b - a; });
+  var i = 0;
+  while (i < rows.length) {
+    var end = rows[i], start = end;
+    while (i + 1 < rows.length && rows[i + 1] === start - 1) { start = rows[++i]; }
+    sh.deleteRows(start, end - start + 1);
+    i++;
+  }
+}
