@@ -3349,7 +3349,7 @@
     var r = null, netErr = false;
     try {
       r = await api('scanCard', { clientId:item.clientId, front:item.front, back:item.back, thumb:item.thumb,
-        exchangeDate:item.exchangeDate, eventName:item.eventName }, { silent:true, timeoutMs:100000 });
+        exchangeDate:item.exchangeDate, eventName:item.eventName }, { silent:true, timeoutMs:120000 });
     } catch(e){ netErr = true; }
     var d = r && r.ok && r.data && r.data.draft;
     if(r && r.error === 'auth'){
@@ -3598,7 +3598,7 @@
   }
   async function scanRetryDraft(d){
     var r;
-    try { r = await api('retryDraft', { draftId:d.draftId }); } catch(e){ toast('通信に失敗しました'); return; }
+    try { r = await api('retryDraft', { draftId:d.draftId }, { timeoutMs:120000 }); } catch(e){ toast('通信に失敗しました'); return; }
     if(r && r.error === 'auth'){ doLogout(); return; }
     if(r && r.ok && r.data && r.data.draft){
       var nd = r.data.draft;
