@@ -135,7 +135,7 @@
   .ename{font-size:17px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .ecompany{font-size:13px; color:var(--text); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .etitle{font-size:12px; color:var(--muted); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .ethumb{flex:none; width:100px; height:60.44px; border-radius:4px; background:#e7e2d6; overflow:hidden;}
+  .ethumb{position:relative; flex:none; width:100px; height:60.44px; border-radius:4px; background:#e7e2d6; overflow:hidden;}
   .ethumb img{width:100%; height:100%; object-fit:cover; display:block;}
   .eightempty{padding:44px 24px; text-align:center; color:var(--muted); font-size:13px;}
   .eightspin{padding:30px; text-align:center; color:var(--muted); font-size:13px;}
@@ -295,6 +295,10 @@
       background:var(--paper); display:flex; align-items:center; justify-content:center;
       color:var(--muted); font-size:11px;}
   .cardimg-frame{display:inline-block;}
+  /* 縦型名刺は横型(91:55)の枠に回転して収める（cardFitImg が .cf-rot / .cf-portrait を付ける） */
+  .cf-portrait{position:relative; overflow:hidden;}
+  .cardimg-frame.cf-portrait{display:block; width:220px; max-width:100%; aspect-ratio:91/55; background:#e7e2d6; border-radius:10px; border:1px solid var(--line);}
+  .cf-rot{position:absolute !important; left:50%; top:50%; height:auto !important; max-width:none !important; max-height:none !important; object-fit:fill !important; border:none !important;}
   .cardimg-thumb{max-width:220px; width:100%; border-radius:10px; border:1px solid var(--line);
       box-shadow:0 1px 3px rgba(20,52,42,.08); cursor:zoom-in; display:block;}
   .cardimg-sides{display:flex; gap:7px; margin-top:8px;}
@@ -403,7 +407,7 @@
   .sc-row .sc-body{flex:1; min-width:0;}
   .sc-row .sc-name{font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .sc-row .sc-sub{font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  .sc-thumb{flex:none; width:100px; height:60.44px; border-radius:4px; background:#e7e2d6; overflow:hidden;}
+  .sc-thumb{position:relative; flex:none; width:100px; height:60.44px; border-radius:4px; background:#e7e2d6; overflow:hidden;}
   .sc-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
   .sc-st{display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:var(--tag); color:var(--ink); margin-right:6px;}
   .sc-st.err{background:#fbe3e3; color:#b00020;}
@@ -419,8 +423,8 @@
   .sc-f2{display:flex; gap:8px;}
   .sc-f2 .sc-f{flex:1; min-width:0;}
   .sc-imgs{background:#fff; padding:12px 16px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:10px;}
-  .sc-imgs .sc-imgwrap{position:relative; min-height:80px; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#f1efe8;}
-  .sc-imgs img{display:block; width:100%; cursor:zoom-in;}
+  .sc-imgs .sc-imgwrap{position:relative; width:100%; aspect-ratio:91/55; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#f1efe8;}
+  .sc-imgs img{display:block; width:100%; height:100%; object-fit:contain; cursor:zoom-in;}
   .sc-imgs .sc-imgtag{position:absolute; left:8px; top:8px; font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff;}
   .sc-meta{padding:8px 16px; font-size:12px; color:var(--muted); background:#fff; line-height:1.6;}
   .sc-err{margin:10px 16px 0; padding:10px 12px; border-radius:10px; background:#fbe3e3; color:#b00020; font-size:13px; line-height:1.5;}
@@ -463,6 +467,10 @@
   .sc-prevbtns{display:flex; flex-direction:column; gap:8px;}
   .sc-prevbtns .row{display:flex; gap:8px;}
   .sc-prevbtns button{flex:1; padding:13px 8px; border-radius:12px; border:1px solid #666; background:#222; color:#fff; font-size:14px; font-weight:700;}
+  .sc-flash{position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:5;}
+  .sc-flash.on{opacity:.9;}
+  .sc-count.pulse{animation:scpulse .6s ease-out;}
+  @keyframes scpulse{0%{transform:scale(1.9); color:#ffd9a8; font-weight:700;} 100%{transform:scale(1);}}
   .sc-prevbtns button.primary{background:var(--accent); border-color:var(--accent); font-size:16px; padding:15px;}
 </style>
 </head>
@@ -660,14 +668,16 @@
         <button type="button" class="sc-x" id="scanClose" aria-label="閉じる">×</button>
         <div class="sc-title" id="scanTitle"></div>
         <div class="sc-count" id="scanCount"></div>
+        <button type="button" class="sc-x" id="scanSound" aria-label="シャッター音">🔊</button>
       </div>
       <div class="sc-hint" id="scanHint"></div>
       <div class="sc-fallback" id="scanFallback" hidden></div>
       <div class="sc-bottom">
         <button type="button" class="sc-side" id="scanDone">完了</button>
         <button type="button" class="sc-shutter" id="scanShutter" aria-label="撮影"></button>
-        <button type="button" class="sc-side" id="scanOrient">横型</button>
+        <button type="button" class="sc-side" id="scanOrient" aria-label="縦型に切替">縦型</button>
       </div>
+      <div class="sc-flash" id="scanFlash"></div>
       <div class="sc-preview" id="scanPreview" hidden></div>
       <input type="file" id="scanFile" accept="image/*" capture="environment" hidden>
     </div>
@@ -910,6 +920,29 @@
     return p;
   }
 
+  // ---- 縦型名刺の横型統一表示（表示層のみ。保存画像・拡大表示は元の向きのまま） ----
+  // 縦長(naturalHeight > naturalWidth)の画像だけを PORTRAIT_ROTATE_DEG 回転し、親の枠(91:55)に収める。回転方向はここだけで定義。
+  var PORTRAIT_ROTATE_DEG = -90; // 反時計回り90°
+  function cardFitImg(img){
+    if(!img) return;
+    function apply(){
+      var w = img.naturalWidth, h = img.naturalHeight;
+      if(!w || !h) return;
+      var box = img.parentNode;
+      if(h > w){
+        // 回転後の見た目は 幅=h 高さ=w。枠(W×H=91:55)に収まる width は min(H/W=55/91, w/h)
+        img.classList.add('cf-rot');
+        img.style.width = Math.min(55/91*100, w/h*100) + '%';
+        img.style.transform = 'translate(-50%,-50%) rotate(' + PORTRAIT_ROTATE_DEG + 'deg)';
+        if(box){ box.classList.add('cf-portrait'); }
+      } else {
+        img.classList.remove('cf-rot'); img.style.width = ''; img.style.transform = '';
+        if(box){ box.classList.remove('cf-portrait'); }
+      }
+    }
+    if(img.complete && img.naturalWidth){ apply(); } else { img.addEventListener('load', apply); }
+  }
+
   // 人物詳細/整理モード共用の名刺画像サムネ部品。
   // 画像が無い人物（Eight時代）は container を空にし、枠自体を出さない（CSSの :empty で非表示）。
   function renderCardImageBox(container, id){
@@ -940,6 +973,7 @@
           + '</div>';
       }
       container.innerHTML = html;
+      cardFitImg(container.querySelector('.cardimg-thumb'));
       container.querySelector('.cardimg-thumb').onclick = function(){ openCardImageModal(id, side); };
       if(hasBack){
         Array.prototype.forEach.call(container.querySelectorAll('.cardimg-sides .chip'), function(chip){
@@ -2602,6 +2636,7 @@
     EL('eightList').querySelectorAll('.ethumb[data-thumb-id="'+fid.replace(/"/g,'')+'"]').forEach(function(el){
       if(el.querySelector('img')) return;
       el.innerHTML = '<img src="data:image/jpeg;base64,'+b64+'" alt="">';
+      cardFitImg(el.querySelector('img'));
     });
   }
 
@@ -3161,7 +3196,9 @@
     var q = SQ.items.length;
     EL('scanCount').textContent = s.cont ? ('撮影 '+s.count+'枚' + (q ? ' / 送信待ち '+q : '')) : '';
     EL('scanDone').textContent = s.cont ? '完了' : '閉じる';
-    EL('scanOrient').textContent = s.portrait ? '縦型' : '横型';
+    // ボタンには「切り替え先」を表示する（横型枠の表示中は「縦型」）
+    EL('scanOrient').textContent = s.portrait ? '横型' : '縦型';
+    EL('scanOrient').setAttribute('aria-label', s.portrait ? '横型に切替' : '縦型に切替');
     EL('scanGuide').hidden = s.fallback;
     EL('scanOrient').style.visibility = s.fallback ? 'hidden' : 'visible';
     scanLayoutGuide();
@@ -3219,7 +3256,39 @@
     var sx = ((g.left - root.left) - ox)/sc, sy = ((g.top - root.top) - oy)/sc, sw = g.width/sc, sh = g.height/sc;
     sx = Math.max(0, sx); sy = Math.max(0, sy);
     sw = Math.min(sw, vw - sx); sh = Math.min(sh, vh - sy);
+    scanFeedback();
     scanAcceptCanvas(scanCropCanvas(v, sx, sy, sw, sh));
+  }
+  // シャッターのフィードバック: 音(Web Audio合成・外部音声ファイルなし) / 白フラッシュ / バイブ
+  var scanAudio = null;
+  function scanSoundOn(){ return scanLS('msScanSound') !== '0'; }
+  function scanPlayShutter(){
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return;
+      if(!scanAudio){ scanAudio = new AC(); }   // タップ時に生成・resume（自動再生制限の対策）
+      if(scanAudio.state === 'suspended' && scanAudio.resume){ scanAudio.resume(); }
+      var t0 = scanAudio.currentTime;
+      [[1800, 0, 0.05], [900, 0.06, 0.07]].forEach(function(p){
+        var o = scanAudio.createOscillator(), g = scanAudio.createGain();
+        o.type = 'square'; o.frequency.value = p[0];
+        g.gain.setValueAtTime(0.18, t0 + p[1]); g.gain.exponentialRampToValueAtTime(0.001, t0 + p[1] + p[2]);
+        o.connect(g); g.connect(scanAudio.destination);
+        o.start(t0 + p[1]); o.stop(t0 + p[1] + p[2] + 0.01);
+      });
+    } catch(e){}
+  }
+  function scanFeedback(){
+    var f = EL('scanFlash');
+    f.classList.add('on');
+    setTimeout(function(){ f.classList.remove('on'); }, 150);
+    if(scanSoundOn()){ scanPlayShutter(); }
+    if(navigator.vibrate){ try { navigator.vibrate(50); } catch(e){} }
+  }
+  function scanSoundPaint(){
+    var on = scanSoundOn();
+    EL('scanSound').textContent = on ? '🔊' : '🔇';
+    EL('scanSound').setAttribute('aria-label', on ? 'シャッター音をオフにする' : 'シャッター音をオンにする');
   }
   function scanCropCanvas(src, sx, sy, sw, sh){
     var k = Math.min(1, SCAN_LONG_EDGE / Math.max(sw, sh));
@@ -3229,10 +3298,20 @@
     return cv;
   }
   function scanThumbB64(cv){
-    var k = Math.min(1, SCAN_THUMB_W / cv.width);
+    var portrait = cv.height > cv.width;   // 縦長は PORTRAIT_ROTATE_DEG と同じ向きに回して横型サムネにする（本画像は回さない）
+    var k = Math.min(1, SCAN_THUMB_W / (portrait ? cv.height : cv.width));
     var t = document.createElement('canvas');
-    t.width = Math.max(1, Math.round(cv.width*k)); t.height = Math.max(1, Math.round(cv.height*k));
-    t.getContext('2d').drawImage(cv, 0, 0, t.width, t.height);
+    t.width = Math.max(1, Math.round((portrait ? cv.height : cv.width)*k));
+    t.height = Math.max(1, Math.round((portrait ? cv.width : cv.height)*k));
+    var cx = t.getContext('2d');
+    if(portrait){
+      cx.scale(k, k);
+      if(PORTRAIT_ROTATE_DEG < 0){ cx.translate(0, cv.width); } else { cx.translate(cv.height, 0); }
+      cx.rotate(PORTRAIT_ROTATE_DEG * Math.PI / 180);
+      cx.drawImage(cv, 0, 0);
+    } else {
+      cx.drawImage(cv, 0, 0, t.width, t.height);
+    }
     return t.toDataURL('image/jpeg', SCAN_THUMB_Q).split(',')[1];
   }
   // getUserMedia 不可時: 端末カメラ(<input capture>)で撮った写真を縮小して取り込む
@@ -3289,6 +3368,7 @@
       EL('scanPreview').hidden = true;
       scanRenderUi();
       toast(s.count+'枚目を追加しました');
+      var cEl = EL('scanCount'); cEl.classList.remove('pulse'); void cEl.offsetWidth; cEl.classList.add('pulse'); // 枚数カウンタを一瞬強調
       sqKick();
     } else {
       // 1枚だけ撮る場合: 読み取りが終わったら該当下書きの確認画面を自動で開く
@@ -3460,6 +3540,7 @@
         };
       });
     });
+    Array.prototype.forEach.call(body.querySelectorAll('.sc-thumb img'), cardFitImg);
     scanPaintThumbs();
   }
   function scanConfirmDeleteQueued(it){
@@ -3476,7 +3557,7 @@
     cells.forEach(function(c){
       var id = c.getAttribute('data-th');
       if(!id) return;
-      if(scanThumbs[id]){ c.innerHTML = '<img src="data:image/jpeg;base64,'+scanThumbs[id]+'" alt="">'; }
+      if(scanThumbs[id]){ c.innerHTML = '<img src="data:image/jpeg;base64,'+scanThumbs[id]+'" alt="">'; cardFitImg(c.querySelector('img')); }
       else if(need.indexOf(id) < 0){ need.push(id); }
     });
     for(var i = 0; i < need.length; i += 30){
@@ -3486,7 +3567,7 @@
           Object.keys(r.data).forEach(function(k){ scanThumbs[k] = r.data[k]; });
           cells.forEach(function(c){
             var id = c.getAttribute('data-th');
-            if(ids.indexOf(id) >= 0 && scanThumbs[id] && document.body.contains(c)){ c.innerHTML = '<img src="data:image/jpeg;base64,'+scanThumbs[id]+'" alt="">'; }
+            if(ids.indexOf(id) >= 0 && scanThumbs[id] && document.body.contains(c)){ c.innerHTML = '<img src="data:image/jpeg;base64,'+scanThumbs[id]+'" alt="">'; cardFitImg(c.querySelector('img')); }
           });
         }).catch(function(){});
       })(need.slice(i, i + 30));
@@ -3543,7 +3624,7 @@
       var side = w.getAttribute('data-side'), img = w.querySelector('img');
       api('draftImage', { draftId:d.draftId, side:side }, { silent:true }).then(function(r){
         if(!(r && r.ok && r.data && r.data.image) || !document.body.contains(w)) return;
-        img.src = 'data:'+(r.data.mime || 'image/jpeg')+';base64,'+r.data.image; img.hidden = false;
+        img.src = 'data:'+(r.data.mime || 'image/jpeg')+';base64,'+r.data.image; img.hidden = false; cardFitImg(img);
         img.onclick = function(){ scanOpenDraftImage(r.data.image, r.data.mime); };
       }).catch(function(){});
     });
@@ -3628,6 +3709,8 @@
   EL('trayEntry').onclick = function(){ location.hash = '#tray'; };
   EL('scanShutter').onclick = scanShutter;
   EL('scanClose').onclick = scanExit;
+  EL('scanSound').onclick = function(){ scanLS('msScanSound', scanSoundOn() ? '0' : '1'); scanSoundPaint(); if(scanSoundOn()){ scanPlayShutter(); } };
+  scanSoundPaint();
   EL('scanDone').onclick = scanExit;
   EL('scanOrient').onclick = function(){ if(scanSession){ scanSession.portrait = !scanSession.portrait; scanRenderUi(); } };
   EL('scanFile').onchange = function(){ var f = this.files && this.files[0]; this.value = ''; scanFromFile(f); };
