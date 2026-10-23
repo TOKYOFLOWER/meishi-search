@@ -58,6 +58,9 @@ db.data.push(['M00001','既存商事','','代表取締役','経営者','既存 �
 db.data.push(['M00002','既存商事','','','担当','既存 花子','既存','花子','その他','','','','','','','','','', '', '2025-01-20', '', '']);
 // ---- ここから スマホ撮影登録(scanCard/confirmDraft等)の検証 ----
 Utilities.getUuid = () => require('crypto').randomUUID();
+Utilities.DigestAlgorithm = { SHA_256: 'sha256' }; Utilities.Charset = { UTF_8: 'utf8' };
+Utilities.computeDigest = (alg, str) => Array.from(require('crypto').createHash('sha256').update(String(str), 'utf8').digest()).map((b) => (b > 127 ? b - 256 : b));
+const _ins = ss.insertSheet; ss.insertSheet = (n) => { const sh = _ins(n); sh.appendRow = (r) => { sh.data.push(r.slice()); }; sh.getRange0 = 0; return sh; };
 const fetchCalls = [];
 let fetchImpl = () => ({ code: 200, body: '{}' });
 const UrlFetchApp = { fetch: (url, opts) => { fetchCalls.push({ url, opts }); const r = fetchImpl(url, opts); return { getResponseCode: () => r.code, getContentText: () => r.body }; } };
@@ -149,5 +152,24 @@ check('countPendingDrafts_ 反映(c-2のみ未確認)', g.countPendingDrafts_() 
 // 7) 組込テスト関数・既存addCardの挙動
 check('testScanIdempotency (同一clientIdで2回→drafts 1行)', g.testScanIdempotency() === true, '');
 check('addCard 既存挙動: duplicate は従来どおり行番号を返し追記しない', (() => { const n = sheets['名刺DB'].data.length; const r = post({ action: 'addCard', card: { company: '既存商事', name: '既存 花子' } }); return r.ok && r.duplicate === true && r.row === 3 && sheets['名刺DB'].data.length === n; })(), '');
+
+// 8) 認証: トークンなし / 無効 / revoked では全 scan 系 action が拒否され、drafts 書き込み・画像返却・API呼び出しが起きない
+const login = post({ action: 'login', deviceLabel: 't' });
+const tok = login.data.token;
+const rawPost = (o) => JSON.parse(g.doPost({ postData: { contents: JSON.stringify(o) } }));
+const sample = (act, extra) => Object.assign({ action: act, draftId: r1.data.draft.draftId, clientId: 'auth-x', front: JPG, card: extracted, side: 'front' }, extra || {});
+const ACTS = ['scanCard', 'listDrafts', 'retryDraft', 'confirmDraft', 'discardDraft', 'draftImage'];
+const snap = () => JSON.stringify([sheets.drafts.data, sheets['名刺DB'].data.length, fetchCalls.length, Object.keys(driveFiles).length]);
+const before0 = snap();
+const denied = (r) => r.ok === false && /^auth$/i.test(r.error) && r.data === undefined && r.image === undefined;
+check('有効トークンでは listDrafts が通る', rawPost({ action: 'listDrafts', token: tok }).ok === true, '');
+ACTS.forEach((a) => {
+  check('認証情報なし: ' + a, denied(rawPost(sample(a))), '');
+  check('無効トークン: ' + a, denied(rawPost(sample(a, { token: 'bogus' }))), '');
+  check('誤ID/パス: ' + a, denied(rawPost(sample(a, { user: 'x', pass: 'y' }))), '');
+});
+rawPost({ action: 'logout', token: tok });
+ACTS.forEach((a) => check('revoked トークン: ' + a, denied(rawPost(sample(a, { token: tok }))), ''));
+check('拒否された呼び出しで drafts/名刺DB/Drive/Claude API に一切触れていない', snap() === before0, '');
 console.log(fails ? '\nFAILED: ' + fails : '\nALL PASS');
 process.exit(fails ? 1 : 0);
