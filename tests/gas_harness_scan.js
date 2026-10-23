@@ -69,7 +69,7 @@ DriveApp.getFileById = ((orig) => (id) => {
 })(DriveApp.getFileById);
 const body = fs.readFileSync('X:/projects/meishi-search/src/Code.js', 'utf8').replace("'1gy6viELdXZnGWcNbPGqKmdJjrrteBE7dI1RhS-r8OVY'", "'SSID'");
 const api = new Function('SpreadsheetApp', 'Utilities', 'Logger', 'LockService', 'PropertiesService', 'CacheService', 'DriveApp', 'UrlFetchApp', 'ContentService',
-  body + '\nreturn { setupScanFeature, countPendingDrafts_, doPost, test_scan_, bootstrap_ };');
+  body + '\nreturn { setupScanFeature, countPendingDrafts_, doPost, testScanIdempotency, bootstrap_ };');
 const g = api(SpreadsheetApp, Utilities, Logger, LockService, PropertiesService, CacheService, DriveApp, UrlFetchApp, ContentService);
 let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log((ok ? 'OK  ' : 'NG  ') + name + (ok ? '' : ' -> ' + detail)); };
@@ -147,7 +147,7 @@ check('confirmed の破棄は拒否', post({ action: 'discardDraft', draftId: r1
 check('countPendingDrafts_ 反映(c-2のみ未確認)', g.countPendingDrafts_() === 1, g.countPendingDrafts_());
 
 // 7) 組込テスト関数・既存addCardの挙動
-check('test_scan_ (同一clientIdで2回→drafts 1行)', g.test_scan_() === true, '');
+check('testScanIdempotency (同一clientIdで2回→drafts 1行)', g.testScanIdempotency() === true, '');
 check('addCard 既存挙動: duplicate は従来どおり行番号を返し追記しない', (() => { const n = sheets['名刺DB'].data.length; const r = post({ action: 'addCard', card: { company: '既存商事', name: '既存 花子' } }); return r.ok && r.duplicate === true && r.row === 3 && sheets['名刺DB'].data.length === n; })(), '');
 console.log(fails ? '\nFAILED: ' + fails : '\nALL PASS');
 process.exit(fails ? 1 : 0);

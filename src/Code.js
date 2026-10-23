@@ -3274,7 +3274,7 @@ function confirmDraft_(body) {
 }
 
 // 手動テスト用（GASエディタから実行）: 同じ clientId で scanCard を2回呼んでも drafts が1行のままか確認し、後片付けする
-function test_scan_() {
+function testScanIdempotency() {
   if (!draftsReady_()) { Logger.log('drafts シートがありません。先に setupScanFeature を実行してください'); return 'not_setup'; }
   SCAN_TEST_STUB_ = function () { return { name: 'テスト 太郎', company: 'テスト株式会社', confidence: 0.9, notes: '' }; };
   var cid = 'test-' + Utilities.getUuid();
@@ -3290,6 +3290,6 @@ function test_scan_() {
     d.sheet.deleteRow(idx[0] + 2);
   }
   SCAN_TEST_STUB_ = null;
-  Logger.log('test_scan_: ' + (ok ? 'OK（同一clientId 2回で1行）' : 'NG ' + JSON.stringify([r1, r2, idx.length])));
+  Logger.log('testScanIdempotency: ' + (ok ? 'OK（同一clientId 2回で1行）' : 'NG ' + JSON.stringify([r1, r2, idx.length])));
   return ok;
 }
