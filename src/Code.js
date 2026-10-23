@@ -163,6 +163,18 @@ function doPost(e) {
       out = snsSaveToSheet_(body);
     } else if (body.action === 'snsRemove') {
       out = snsRemoveFromSheet_(body);
+    } else if (body.action === 'scanCard') {
+      out = scanCard_(body);
+    } else if (body.action === 'listDrafts') {
+      out = listDrafts_(body);
+    } else if (body.action === 'retryDraft') {
+      out = retryDraft_(body);
+    } else if (body.action === 'confirmDraft') {
+      out = confirmDraft_(body);
+    } else if (body.action === 'discardDraft') {
+      out = discardDraft_(body);
+    } else if (body.action === 'draftImage') {
+      out = draftImage_(body);
     } else {
       out = { ok: false, error: 'unknown_action' };
     }
@@ -863,7 +875,22 @@ function addCardToSheet(card) {
       // 会社名なし: 正規化氏名＋(メール or TEL/携帯 のいずれか一致)。連絡先が全く無ければ 正規化氏名＋会社名空 で判定
       dupIdx = findNoCompanyDup_(d.rows, c, normKey_(name), email, [tel, mobile]);
     }
-    if (dupIdx !== undefined) {
+    // card.dryRun: 書き込まず重複(完全一致)と重複候補だけ返す。card.force: 完全一致でも登録する（スマホ撮影の確認トレイ用）
+    if (card.dryRun) {
+      var preCands = [];
+      try { preCands = findDupCandidates_({ company: company, name: name, sei: sei, mei: mei, email: email, tel: tel, mobile: mobile }, buildDupIndex_(d.rows, c), -1); }
+      catch (e) { Logger.log('addCard(dryRun): 重複候補の判定に失敗: ' + e); }
+      var rowsOut = {};
+      if (dupIdx !== undefined) rowsOut[dupIdx + 2] = { row: dupIdx + 2, reasons: ['同じ会社・氏名'] };
+      preCands.forEach(function (cd) { rowsOut[cd.row] = { row: cd.row, reasons: cd.reasons }; });
+      var candOut = Object.keys(rowsOut).map(function (k) {
+        var o = rowsOut[k], r = d.rows[o.row - 2] || [];
+        return { row: o.row, id: String(r[c['id']] || ''), name: String(r[c['氏名']] || ''), company: String(r[c['会社名']] || ''),
+          title: String(r[c['役職']] || ''), reasons: o.reasons };
+      });
+      return { ok: true, dryRun: true, duplicate: dupIdx !== undefined, candidates: candOut };
+    }
+    if (dupIdx !== undefined && !card.force) {
       return { ok: true, duplicate: true, row: dupIdx + 2 };
     }
 
@@ -1825,6 +1852,7 @@ function bootstrap_(input) {
   var cached = bootCacheGet_(key);
   if (cached) {
     cached.cached = true;
+    cached.draftCount = countPendingDrafts_(); // 未確認下書き件数はキャッシュ対象外（毎回数える）
     Logger.log('bootstrap(cache): ' + (Date.now() - t0) + 'ms');
     return { ok: true, data: cached };
   }
@@ -1842,6 +1870,7 @@ function bootstrap_(input) {
     generatedAt: nowStamp_()
   };
   bootCachePut_(key, data);
+  data.draftCount = countPendingDrafts_(); // キャッシュに載せた後で付ける（下書きの増減はキャッシュを無効化しないため）
   Logger.log('bootstrap: ' + (Date.now() - t0) + 'ms');
   return { ok: true, data: data };
 }
@@ -2873,4 +2902,394 @@ function deleteRowsDesc_(sh, rows) {
     sh.deleteRows(start, end - start + 1);
     i++;
   }
+}
+
+
+/* ==================================================================
+ *  スマホ撮影登録（drafts）: scanCard / listDrafts / retryDraft / confirmDraft / discardDraft / draftImage
+ *  画像はスマホ側で切り出し・縮小済みの JPEG(base64)。GAS が Drive に保存し、Claude API で読み取って
+ *  drafts シートに「下書き」として置く。確認トレイで人が直してから confirmDraft で本登録する。
+ *  事前に setupScanFeature() をエディタから1回手動実行しておく（バックアップ＋drafts シート作成）。
+ * ================================================================== */
+var DRAFTS_SHEET = 'drafts';
+var DRAFTS_HEADER = ['draftId', 'clientId', 'status', 'createdAt', 'frontImageId', 'backImageId', 'thumbImageId',
+  'exchangeDate', 'eventName', 'extractedJson', 'errorMessage', 'cardId'];
+var DRAFT_PENDING = ['extracted', 'error']; // 確認トレイに出す状態
+var SCAN_MODEL = 'claude-sonnet-4-6';
+var SCAN_API_URL = 'https://api.anthropic.com/v1/messages';
+var SCAN_API_VERSION = '2023-06-01';
+var SCAN_STALE_SEC = 180; // queued のまま放置された下書きは再抽出してよいとみなす秒数
+var DRAFT_LIST_MAX = 100;
+var SCAN_CARD_KEYS = ['company', 'name', 'kana', 'department', 'title', 'email', 'tel', 'mobile', 'fax', 'postal', 'address', 'url', 'memo'];
+var SCAN_TOOL_NAME = 'record_card';
+var SCAN_TEST_STUB_ = null; // テスト用: 関数を入れると Claude 呼び出しの代わりに使う
+
+// ingest.py の SYSTEM_PROMPT / USER_PROMPT を移植（画像のみなので PDF 関連の記述は除く）
+var SCAN_SYSTEM_PROMPT = [
+  'あなたは名刺OCRの専門家です。与えられた名刺の画像から情報を正確に抽出し、',
+  'record_card ツールを呼び出して結果を返してください。説明文は不要です。',
+  '',
+  'ツールに渡す項目は次の通りです。',
+  '- company: 会社名',
+  '- name: 氏名（姓と名の間に半角スペースを1つ入れる）',
+  '- kana: ふりがな、またはローマ字表記（記載があれば）',
+  '- department: 部署名',
+  '- title: 役職',
+  '- email: メールアドレス',
+  '- tel: 電話番号（数字とハイフンのみ）',
+  '- mobile: 携帯電話番号（数字とハイフンのみ）',
+  '- fax: FAX番号（数字とハイフンのみ）',
+  '- postal: 郵便番号（"123-4567"形式）',
+  '- address: 住所（都道府県から書く）',
+  '- url: ウェブサイトのURL',
+  '- memo: 名刺に書かれたその他の情報（資格、SNSアカウント、キャッチコピー等）を短くまとめる',
+  '- confidence: 抽出結果全体の確信度（0〜1の数値）',
+  '- notes: 読み取りに関する補足事項があれば記載する文字列（無ければ空文字）',
+  '',
+  'ルール:',
+  '- 日本語面と英語面の両方が写っている場合は、日本語表記の情報を優先すること。',
+  '- 読み取れない項目は空文字列にすること。',
+  '- 文字列中に二重引用符が含まれていても、そのまま値として渡して構いません（ツール入力として扱われます）。'
+].join('\n');
+var SCAN_SYSTEM_PROMPT_BOTH = SCAN_SYSTEM_PROMPT + '\n- 表面と裏面の2枚の画像が渡される。表裏は同一人物の名刺。日本語面を主、英語面は英語表記・補助情報として扱い、矛盾する場合は表面を優先すること。';
+var SCAN_USER_PROMPT = 'この名刺の画像から情報を抽出し、指定された形式で出力してください。';
+var SCAN_USER_PROMPT_BOTH = 'この名刺（1枚目が表面、2枚目が裏面）から情報を抽出し、同一人物の1つの結果に統合して、指定された形式で出力してください。';
+
+function scanCardTool_() {
+  var props = {};
+  SCAN_CARD_KEYS.forEach(function (k) { props[k] = { type: 'string' }; });
+  props.confidence = { type: 'number', description: '抽出結果全体の確信度(0〜1)' };
+  props.notes = { type: 'string', description: '読み取りに関する補足(無ければ空文字)' };
+  return {
+    name: SCAN_TOOL_NAME,
+    description: '名刺から抽出した情報を記録する。読み取れない項目は空文字列にする。',
+    input_schema: { type: 'object', properties: props, required: SCAN_CARD_KEYS.concat(['confidence', 'notes']) }
+  };
+}
+
+// エディタから手動実行する（末尾 _ なし）。最初にスプレッドシート全体をバックアップしてから準備する。冪等。
+function setupScanFeature() {
+  var stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd_HHmm');
+  var src = DriveApp.getFileById(SPREADSHEET_ID);
+  var parents = src.getParents();
+  var copy = parents.hasNext() ? src.makeCopy('meishi_backup_' + stamp, parents.next()) : src.makeCopy('meishi_backup_' + stamp);
+  Logger.log('バックアップ作成: ' + copy.getName() + ' (' + copy.getId() + ')');
+
+  var dr = ensureSheetWithHeader_(DRAFTS_SHEET, DRAFTS_HEADER);
+  setColumnPlainText_(dr.sheet, dr.header, ['createdAt', 'exchangeDate']);
+  Logger.log('drafts シート: ' + (dr.created ? '新規作成' : '既存') + (dr.added.length ? ' / 追加列 ' + dr.added.join(',') : ''));
+
+  // 名刺DB: 画像列（表裏）が無ければ末尾に追加するだけ。既存列の並び替え・削除・改名はしない
+  var sh = getSheet_();
+  var header = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+  var have = colIndex_(header), addedCols = [];
+  IMAGE_COLS.concat([THUMB_COL]).forEach(function (col) {
+    if (have[col] !== undefined) return;
+    sh.getRange(1, header.length + 1).setValue(col);
+    header.push(col); have[col] = header.length - 1; addedCols.push(col);
+  });
+  Logger.log('名刺DB 追加列: ' + (addedCols.length ? addedCols.join(',') : 'なし'));
+  setupImageFolder_();
+
+  // UrlFetchApp を1回呼んで外部通信スコープの承認を発生させる（キーがあれば疎通も確認。キー値は出力しない）
+  var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  var headers = { 'anthropic-version': SCAN_API_VERSION };
+  if (key) headers['x-api-key'] = key;
+  var code = UrlFetchApp.fetch('https://api.anthropic.com/v1/models?limit=1', { method: 'get', headers: headers, muteHttpExceptions: true }).getResponseCode();
+  Logger.log('Anthropic API 疎通: HTTP ' + code + (key ? '' : '（ANTHROPIC_API_KEY が未設定です。スクリプトプロパティに設定してください）'));
+  return { backup: copy.getName(), backupId: copy.getId(), draftsCreated: !!dr.created, addedCols: addedCols, apiHttp: code, apiKeySet: !!key };
+}
+
+/* ---- drafts シート操作 ---- */
+function draftsReady_() { return !!ss_().getSheetByName(DRAFTS_SHEET); }
+function draftFromRow_(r, c) {
+  var g = function (n) { return r[c[n]] == null ? '' : String(r[c[n]]); };
+  var ex = null;
+  if (g('extractedJson')) { try { ex = JSON.parse(g('extractedJson')); } catch (e) { ex = null; } }
+  return {
+    draftId: g('draftId'), clientId: g('clientId'), status: g('status'), createdAt: g('createdAt'),
+    frontImageId: g('frontImageId'), backImageId: g('backImageId'), thumbImageId: g('thumbImageId'), hasBack: !!g('backImageId'),
+    exchangeDate: g('exchangeDate'), eventName: g('eventName'), extracted: ex, errorMessage: g('errorMessage'), cardId: g('cardId')
+  };
+}
+function findDraftIdx_(d, col, value) {
+  for (var i = 0; i < d.rows.length; i++) if (String(d.rows[i][d.c[col]]) === value) return i;
+  return -1;
+}
+function getDraft_(draftId) {
+  if (!draftId || !draftsReady_()) return null;
+  var d = readSheet_(DRAFTS_SHEET), i = findDraftIdx_(d, 'draftId', draftId);
+  return i < 0 ? null : draftFromRow_(d.rows[i], d.c);
+}
+// draftId の行の指定列だけ更新（ロック内）。行が無ければ false
+function updateDraft_(draftId, fields) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var d = readSheet_(DRAFTS_SHEET), i = findDraftIdx_(d, 'draftId', draftId);
+    if (i < 0) return false;
+    Object.keys(fields).forEach(function (k) {
+      if (d.c[k] === undefined) return;
+      var cell = d.sheet.getRange(i + 2, d.c[k] + 1);
+      if (k === 'createdAt' || k === 'exchangeDate') cell.setNumberFormat('@');
+      cell.setValue(fields[k]);
+    });
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+function countPendingDrafts_() {
+  try {
+    var sh = ss_().getSheetByName(DRAFTS_SHEET);
+    if (!sh || sh.getLastRow() < 2) return 0;
+    var header = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0], c = colIndex_(header);
+    if (c['status'] === undefined) return 0;
+    var vals = sh.getRange(2, c['status'] + 1, sh.getLastRow() - 1, 1).getValues();
+    var n = 0;
+    vals.forEach(function (v) { if (DRAFT_PENDING.indexOf(String(v[0])) >= 0) n++; });
+    return n;
+  } catch (e) { Logger.log('countPendingDrafts_: ' + e); return 0; }
+}
+
+/* ---- Claude API ---- */
+function callClaudeForCard_(frontB64, backB64) {
+  if (SCAN_TEST_STUB_) return SCAN_TEST_STUB_(frontB64, backB64);
+  var key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  if (!key) throw new Error('ANTHROPIC_API_KEY が未設定です（スクリプトプロパティ）');
+  var img = function (b64) { return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } }; };
+  var content = backB64
+    ? [{ type: 'text', text: '【表面】' }, img(frontB64), { type: 'text', text: '【裏面】' }, img(backB64), { type: 'text', text: SCAN_USER_PROMPT_BOTH }]
+    : [img(frontB64), { type: 'text', text: SCAN_USER_PROMPT }];
+  var payload = {
+    model: SCAN_MODEL, max_tokens: 2048,
+    system: backB64 ? SCAN_SYSTEM_PROMPT_BOTH : SCAN_SYSTEM_PROMPT,
+    tools: [scanCardTool_()], tool_choice: { type: 'tool', name: SCAN_TOOL_NAME },
+    messages: [{ role: 'user', content: content }]
+  };
+  var opts = {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { 'x-api-key': key, 'anthropic-version': SCAN_API_VERSION }, payload: JSON.stringify(payload)
+  };
+  var lastErr = '';
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var resp = UrlFetchApp.fetch(SCAN_API_URL, opts);
+    var code = resp.getResponseCode(), text = resp.getContentText();
+    if (code === 200) {
+      var json = JSON.parse(text);
+      if (json.stop_reason === 'refusal') throw new Error('Claude が読み取りを拒否しました');
+      var blocks = json.content || [];
+      for (var i = 0; i < blocks.length; i++) {
+        if (blocks[i].type === 'tool_use' && blocks[i].name === SCAN_TOOL_NAME) return blocks[i].input || {};
+      }
+      throw new Error('Claude の応答に抽出結果がありません');
+    }
+    lastErr = 'Claude API HTTP ' + code + ': ' + text.slice(0, 200);
+    if (code === 429 || code >= 500) { Utilities.sleep(2000 * (attempt + 1)); continue; } // 再試行してよいエラー
+    break;
+  }
+  throw new Error(lastErr || 'Claude API 呼び出しに失敗しました');
+}
+function normalizeExtracted_(raw) {
+  raw = raw || {};
+  var out = {};
+  SCAN_CARD_KEYS.forEach(function (k) { out[k] = String(raw[k] == null ? '' : raw[k]).trim(); });
+  var conf = Number(raw.confidence);
+  out.confidence = isNaN(conf) ? 0 : conf;
+  out.notes = String(raw.notes == null ? '' : raw.notes).trim();
+  if (!out.name) out.notes = (out.notes ? out.notes + ' / ' : '') + '氏名を読み取れませんでした';
+  return out;
+}
+function driveB64_(fileId) {
+  return fileId ? Utilities.base64Encode(DriveApp.getFileById(fileId).getBlob().getBytes()) : '';
+}
+// 抽出して drafts を extracted / error に更新し、最新の draft を返す（画像 base64 が無ければ Drive から読む）
+function extractDraft_(draftId, frontB64, backB64) {
+  try {
+    if (!frontB64) {
+      var cur = getDraft_(draftId);
+      if (!cur) return null;
+      frontB64 = driveB64_(cur.frontImageId); backB64 = driveB64_(cur.backImageId);
+    }
+    var ex = normalizeExtracted_(callClaudeForCard_(frontB64, backB64 || ''));
+    updateDraft_(draftId, { status: 'extracted', extractedJson: JSON.stringify(ex), errorMessage: '' });
+  } catch (e) {
+    Logger.log('extractDraft_: ' + draftId + ' ' + e);
+    updateDraft_(draftId, { status: 'error', errorMessage: String(e && e.message ? e.message : e).slice(0, 500) });
+  }
+  return getDraft_(draftId);
+}
+
+/* ---- actions ---- */
+// 入力 {clientId, front(base64 JPEG), back?, thumb, exchangeDate, eventName}。clientId が既にあれば再登録せずその結果を返す（冪等）
+function scanCard_(body) {
+  body = body || {};
+  var clientId = String(body.clientId || '').trim();
+  var front = String(body.front || '');
+  if (!clientId) return { ok: false, error: 'missing_client_id' };
+  if (!draftsReady_()) return { ok: false, error: 'not_setup' };
+  var back = String(body.back || ''), thumb = String(body.thumb || '');
+  var exchangeDate = isoDate_(body.exchangeDate) || Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+  var eventName = String(body.eventName || '').trim().slice(0, 100);
+  var draftId, redo = false;
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var d = readSheet_(DRAFTS_SHEET), i = findDraftIdx_(d, 'clientId', clientId);
+    if (i >= 0) {
+      var ex = draftFromRow_(d.rows[i], d.c);
+      var created = new Date(String(ex.createdAt).replace(' ', 'T'));
+      var ageSec = isNaN(created.getTime()) ? 1e9 : (Date.now() - created.getTime()) / 1000;
+      if (ex.status === 'queued' && ageSec > SCAN_STALE_SEC) { draftId = ex.draftId; redo = true; } // 抽出中に落ちた下書きは再抽出
+      else return { ok: true, data: { draft: ex, existing: true } };
+    } else {
+      if (!front) return { ok: false, error: 'missing_front' };
+      draftId = 'D' + Utilities.getUuid().replace(/-/g, '').slice(0, 16);
+      var folder = getImageFolder_();
+      var fId = saveImageFile_(folder, draftId + '_front.jpg', front);
+      var bId = back ? saveImageFile_(folder, draftId + '_back.jpg', back) : '';
+      var tId = thumb ? saveImageFile_(folder, draftId + '_thumb.jpg', thumb) : '';
+      var rec = { draftId: draftId, clientId: clientId, status: 'queued', createdAt: nowStamp_(), frontImageId: fId, backImageId: bId,
+        thumbImageId: tId, exchangeDate: exchangeDate, eventName: eventName, extractedJson: '', errorMessage: '', cardId: '' };
+      writeSheetRow_(d.sheet, d.header, d.sheet.getLastRow() + 1, rec, ['createdAt', 'exchangeDate']);
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  // Claude 呼び出し（数十秒）の間はロックを持たない
+  var draft = redo ? extractDraft_(draftId) : extractDraft_(draftId, front, back);
+  return { ok: true, data: { draft: draft, existing: redo } };
+}
+
+function listDrafts_(body) {
+  if (!draftsReady_()) return { ok: true, data: { items: [], setup: false } };
+  var d = readSheet_(DRAFTS_SHEET), items = [];
+  for (var i = d.rows.length - 1; i >= 0 && items.length < DRAFT_LIST_MAX; i--) {
+    var st = String(d.rows[i][d.c['status']]);
+    if (DRAFT_PENDING.indexOf(st) >= 0) items.push(draftFromRow_(d.rows[i], d.c));
+  }
+  items.reverse(); // 古い順（撮った順）
+  return { ok: true, data: { items: items, setup: true } };
+}
+
+function retryDraft_(body) {
+  var draftId = String((body && body.draftId) || '').trim();
+  var cur = getDraft_(draftId);
+  if (!cur) return { ok: false, error: 'not_found' };
+  if (DRAFT_PENDING.indexOf(cur.status) < 0) return { ok: false, error: 'bad_status' }; // 再読取できるのは extracted / error
+  return { ok: true, data: { draft: extractDraft_(draftId) } };
+}
+
+function discardDraft_(body) {
+  var draftId = String((body && body.draftId) || '').trim();
+  var cur = getDraft_(draftId);
+  if (!cur) return { ok: false, error: 'not_found' };
+  if (cur.status === 'confirmed') return { ok: false, error: 'already_confirmed' };
+  updateDraft_(draftId, { status: 'discarded' }); // 画像・行は消さない
+  return { ok: true, data: { draftId: draftId } };
+}
+
+// side: front | back | thumb → base64 JPEG
+function draftImage_(body) {
+  var cur = getDraft_(String((body && body.draftId) || '').trim());
+  if (!cur) return { ok: false, error: 'not_found' };
+  var side = String((body && body.side) || 'front');
+  var fid = side === 'back' ? cur.backImageId : (side === 'thumb' ? (cur.thumbImageId || cur.frontImageId) : cur.frontImageId);
+  if (!fid) return { ok: true, data: { image: null, mime: 'image/jpeg' } };
+  try { return { ok: true, data: { image: driveB64_(fid), mime: 'image/jpeg' } }; }
+  catch (e) { Logger.log('draftImage: ' + cur.draftId + ' ' + e); return { ok: true, data: { image: null, mime: 'image/jpeg', error: 'drive_error' } }; }
+}
+
+// 名刺DB の指定行の列を名前で更新（列が無ければ末尾に追加）
+function setCardCells_(cardId, values) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = getSheet_();
+    var header = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0], c = colIndex_(header);
+    var n = sh.getLastRow() - 1;
+    if (n < 1) return false;
+    var ids = sh.getRange(2, c['id'] + 1, n, 1).getValues(), row = -1;
+    for (var i = 0; i < ids.length; i++) if (String(ids[i][0]) === cardId) { row = i + 2; break; }
+    if (row < 0) return false;
+    Object.keys(values).forEach(function (k) {
+      if (c[k] === undefined) { sh.getRange(1, header.length + 1).setValue(k); header.push(k); c[k] = header.length - 1; }
+      var cell = sh.getRange(row, c[k] + 1);
+      if (k === '名刺交換日') cell.setNumberFormat('@');
+      cell.setValue(values[k]);
+    });
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 入力 {draftId, card:{CARD_KEYS...}, exchangeDate?, eventName?, force?}
+// force なし: 完全一致/重複候補があれば保存せず {needsConfirm:true, candidates} を返す。force あり: そのまま登録
+function confirmDraft_(body) {
+  body = body || {};
+  var draftId = String(body.draftId || '').trim();
+  var cur = getDraft_(draftId);
+  if (!cur) return { ok: false, error: 'not_found' };
+  if (cur.status === 'confirmed') return { ok: true, data: { draftId: draftId, cardId: cur.cardId, already: true } }; // 冪等
+  if (cur.status === 'discarded') return { ok: false, error: 'discarded' };
+  if (cur.status === 'queued') return { ok: false, error: 'not_ready' };
+  var cache = CacheService.getScriptCache(), flag = 'confirming:' + draftId;
+  if (cache.get(flag)) return { ok: false, error: 'in_progress' }; // 連打による二重登録の抑止
+  cache.put(flag, '1', 60);
+  try {
+    var card = {};
+    var src = body.card || {};
+    SCAN_CARD_KEYS.forEach(function (k) { card[k] = String(src[k] == null ? '' : src[k]).trim(); });
+    if (!card.name) return { ok: false, error: 'missing_required' };
+    var iso = isoDate_(body.exchangeDate || cur.exchangeDate) || Utilities.formatDate(new Date(), 'JST', 'yyyy-MM-dd');
+    var eventName = String(body.eventName != null ? body.eventName : cur.eventName).trim().slice(0, 100);
+    var force = !!body.force;
+    if (!force) {
+      var pre = addCardToSheet(Object.assign({}, card, { dryRun: true }));
+      if (!pre.ok) return pre;
+      if (pre.candidates && pre.candidates.length) return { ok: true, data: { needsConfirm: true, candidates: pre.candidates } };
+    }
+    card.source_file = 'mobile-' + draftId;
+    card.batch_id = 'mobile-' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMdd');
+    card.force = force;
+    var res = addCardToSheet(card); // 既存の本登録処理（採番・重複タグ・キャッシュ無効化）をそのまま使う
+    if (!res.ok) return res;
+    if (res.duplicate) return { ok: true, data: { needsConfirm: true, candidates: [{ row: res.row, id: '', name: card.name, company: card.company, title: card.title, reasons: ['同じ会社・氏名'] }] } };
+    var cardId = res.id;
+    // 画像・サムネ・交換日: ドラフトで保存済みの Drive ファイルを名刺行へ直接紐付ける（再アップロードしない）
+    var cells = { '名刺交換日': iso };
+    cells[IMAGE_COLS[0]] = cur.frontImageId;           // imageFrontId
+    cells[IMAGE_COLS[1]] = cur.thumbImageId || '';     // imageFrontThumbId
+    cells[IMAGE_COLS[2]] = cur.backImageId || '';      // imageBackId
+    cells[THUMB_COL] = cur.thumbImageId || '';
+    setCardCells_(cardId, cells);
+    addContactToSheet_({ id: cardId, contactDate: iso, eventName: eventName, contactType: '名刺交換' });
+    updateDraft_(draftId, { status: 'confirmed', cardId: cardId, exchangeDate: iso, eventName: eventName });
+    invalidateBootstrapCache_();
+    return { ok: true, data: { draftId: draftId, cardId: cardId } };
+  } finally {
+    cache.remove(flag);
+  }
+}
+
+// 手動テスト用（GASエディタから実行）: 同じ clientId で scanCard を2回呼んでも drafts が1行のままか確認し、後片付けする
+function test_scan_() {
+  if (!draftsReady_()) { Logger.log('drafts シートがありません。先に setupScanFeature を実行してください'); return 'not_setup'; }
+  SCAN_TEST_STUB_ = function () { return { name: 'テスト 太郎', company: 'テスト株式会社', confidence: 0.9, notes: '' }; };
+  var cid = 'test-' + Utilities.getUuid();
+  var r1 = scanCard_({ clientId: cid, front: TEST_JPEG_B64_, thumb: TEST_JPEG_B64_ });
+  var r2 = scanCard_({ clientId: cid, front: TEST_JPEG_B64_, thumb: TEST_JPEG_B64_ });
+  var d = readSheet_(DRAFTS_SHEET), idx = [];
+  d.rows.forEach(function (r, i) { if (String(r[d.c['clientId']]) === cid) idx.push(i); });
+  var ok = r1.ok && r2.ok && r2.data.existing === true && idx.length === 1 && r1.data.draft.draftId === r2.data.draft.draftId && r1.data.draft.status === 'extracted';
+  // 後片付け: 行と画像を削除
+  if (idx.length) {
+    var dr = draftFromRow_(d.rows[idx[0]], d.c);
+    [dr.frontImageId, dr.backImageId, dr.thumbImageId].forEach(trashFile_);
+    d.sheet.deleteRow(idx[0] + 2);
+  }
+  SCAN_TEST_STUB_ = null;
+  Logger.log('test_scan_: ' + (ok ? 'OK（同一clientId 2回で1行）' : 'NG ' + JSON.stringify([r1, r2, idx.length])));
+  return ok;
 }
