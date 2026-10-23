@@ -382,6 +382,88 @@
   .tbtns{display:flex; flex-direction:column; gap:6px;}
   .trashhint{padding:6px 16px; font-size:12px; color:#c0262d;}
   .trashhint:empty{display:none;}
+
+  /* --- スマホ撮影登録（sc- 接頭辞） --- */
+  .sc-trayentry{display:flex; align-items:center; justify-content:center; gap:8px; width:calc(100% - 32px); margin:10px 16px 0;
+        padding:11px; border-radius:12px; border:1px solid var(--line); background:#fff; color:var(--ink); font-size:14px; font-weight:700; cursor:pointer;}
+  .sc-badge{min-width:22px; padding:1px 7px; border-radius:999px; background:var(--accent); color:#fff; font-size:12px; text-align:center;}
+  .sc-badge[hidden]{display:none;}
+  .sc-fab{position:fixed; right:16px; bottom:calc(18px + env(safe-area-inset-bottom)); z-index:35; width:58px; height:58px; border-radius:50%;
+        border:none; background:var(--accent); color:#fff; font-size:26px; line-height:1; box-shadow:0 4px 14px rgba(0,0,0,.28); cursor:pointer;}
+  .sc-fab[hidden]{display:none;}
+  body.eightselmode .sc-fab{display:none;}
+  .sc-note{padding:10px 16px; font-size:12px; color:var(--muted); background:#fdf3ea; line-height:1.6;}
+  .sc-lbl{display:block; font-size:12px; color:var(--muted); margin-bottom:4px;}
+  .sc-seg{display:flex; gap:8px; margin-bottom:6px;}
+  .sc-seg button{flex:1; padding:11px; border-radius:12px; border:1px solid var(--line); background:#fff; color:var(--ink); font-size:14px; font-weight:700;}
+  .sc-seg button.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .sc-sec{padding:10px 16px 4px; font-size:12px; font-weight:700; color:var(--muted);}
+  .sc-row{display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--line); background:#fff; cursor:pointer;}
+  .sc-row:active{background:var(--paper);}
+  .sc-row .sc-body{flex:1; min-width:0;}
+  .sc-row .sc-name{font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .sc-row .sc-sub{font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .sc-thumb{flex:none; width:100px; height:60.44px; border-radius:4px; background:#e7e2d6; overflow:hidden;}
+  .sc-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .sc-st{display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:var(--tag); color:var(--ink); margin-right:6px;}
+  .sc-st.err{background:#fbe3e3; color:#b00020;}
+  .sc-st.ok{background:#e2efe6; color:#1f7a4c;}
+  .sc-rowbtns{display:flex; gap:6px; flex:none;}
+  .sc-rowbtns button{font-size:12px; padding:7px 10px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .sc-empty{padding:44px 24px; text-align:center; color:var(--muted); font-size:13px;}
+  .sc-form{background:#fff; padding:6px 16px 4px;}
+  .sc-f{margin:10px 0;}
+  .sc-f label{display:block; font-size:12px; color:var(--muted); margin-bottom:4px;}
+  .sc-f input,.sc-f textarea{width:100%; padding:11px 12px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:var(--paper); font-family:inherit;}
+  .sc-f textarea{min-height:64px; resize:vertical;}
+  .sc-f2{display:flex; gap:8px;}
+  .sc-f2 .sc-f{flex:1; min-width:0;}
+  .sc-imgs{background:#fff; padding:12px 16px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:10px;}
+  .sc-imgs .sc-imgwrap{position:relative; min-height:80px; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#f1efe8;}
+  .sc-imgs img{display:block; width:100%; cursor:zoom-in;}
+  .sc-imgs .sc-imgtag{position:absolute; left:8px; top:8px; font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(0,0,0,.55); color:#fff;}
+  .sc-meta{padding:8px 16px; font-size:12px; color:var(--muted); background:#fff; line-height:1.6;}
+  .sc-err{margin:10px 16px 0; padding:10px 12px; border-radius:10px; background:#fbe3e3; color:#b00020; font-size:13px; line-height:1.5;}
+  .sc-actions{display:flex; flex-wrap:wrap; gap:8px; padding:12px 16px 40px; background:#fff;}
+  .sc-actions button{flex:1 1 30%; padding:13px 8px; border-radius:12px; font-size:14px; font-weight:700; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .sc-actions button.primary{flex:1 1 100%; order:-1; background:var(--accent); color:#fff; border-color:var(--accent);}
+  .sc-actions button.danger{color:#c0262d; border-color:#e3c4c4;}
+  .sc-actions button:disabled{opacity:.45;}
+  .sc-cand{padding:8px 0; border-bottom:1px dashed var(--line); font-size:13.5px;}
+  .sc-cand:last-child{border-bottom:none;}
+  .sc-cand span{display:block; font-size:12px; color:var(--muted);}
+  /* 撮影画面 */
+  #view-scan{position:fixed; inset:0; z-index:120; background:#000;}
+  #view-scan[hidden]{display:none;}
+  .sc-root{position:absolute; inset:0; overflow:hidden; background:#000; color:#fff; touch-action:manipulation;}
+  .sc-video{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000;}
+  .sc-guide{position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); border:2px solid #fff; border-radius:8px;
+        box-shadow:0 0 0 100vmax rgba(0,0,0,.52); pointer-events:none;}
+  .sc-top{position:absolute; left:0; right:0; top:0; padding:calc(10px + env(safe-area-inset-top)) 14px 10px; display:flex; align-items:center; gap:10px;
+        background:linear-gradient(rgba(0,0,0,.55),rgba(0,0,0,0));}
+  .sc-x{width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,.2); color:#fff; font-size:22px; line-height:1;}
+  .sc-title{flex:1; font-size:15px; font-weight:700; text-align:center;}
+  .sc-count{min-width:60px; text-align:right; font-size:12px; opacity:.9;}
+  .sc-hint{position:absolute; left:0; right:0; bottom:calc(128px + env(safe-area-inset-bottom)); text-align:center; font-size:13px; padding:0 20px; text-shadow:0 1px 3px rgba(0,0,0,.8);}
+  .sc-bottom{position:absolute; left:0; right:0; bottom:0; padding:14px 18px calc(22px + env(safe-area-inset-bottom)); display:flex; align-items:center; justify-content:space-between;
+        background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.6));}
+  .sc-side{min-width:72px; padding:11px 8px; border-radius:12px; border:1px solid rgba(255,255,255,.5); background:rgba(0,0,0,.35); color:#fff; font-size:14px;}
+  .sc-shutter{width:72px; height:72px; border-radius:50%; border:4px solid #fff; background:rgba(255,255,255,.25); box-shadow:inset 0 0 0 5px rgba(0,0,0,.0);}
+  .sc-shutter:active{background:#fff;}
+  .sc-fallback{position:absolute; left:16px; right:16px; top:50%; transform:translateY(-50%); padding:20px 16px; border-radius:14px; background:rgba(0,0,0,.78); text-align:center; font-size:14px; line-height:1.7;}
+  .sc-fallback[hidden]{display:none;}
+  .sc-fallback button{margin-top:12px; padding:13px 22px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-size:15px; font-weight:700;}
+  .sc-preview{position:absolute; inset:0; background:#111; display:flex; flex-direction:column; padding:calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)); gap:12px; overflow-y:auto;}
+  .sc-preview[hidden]{display:none;}
+  .sc-prevhead{font-size:15px; font-weight:700; text-align:center;}
+  .sc-previmgs{flex:1; display:flex; flex-direction:column; gap:10px; justify-content:center; min-height:0;}
+  .sc-prevbox{position:relative;}
+  .sc-prevbox img{display:block; max-width:100%; max-height:34vh; margin:0 auto; border-radius:8px; border:1px solid #444;}
+  .sc-prevbox span{position:absolute; left:6px; top:6px; font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(0,0,0,.6);}
+  .sc-prevbtns{display:flex; flex-direction:column; gap:8px;}
+  .sc-prevbtns .row{display:flex; gap:8px;}
+  .sc-prevbtns button{flex:1; padding:13px 8px; border-radius:12px; border:1px solid #666; background:#222; color:#fff; font-size:14px; font-weight:700;}
+  .sc-prevbtns button.primary{background:var(--accent); border-color:var(--accent); font-size:16px; padding:15px;}
 </style>
 </head>
 <body>
@@ -422,6 +504,7 @@
       <div class="entry" id="entryUnorg"><b>–</b><span>未整理</span></div>
       <div class="entry" id="entryFollow"><b>–</b><span>要フォロー</span></div>
     </div>
+    <button type="button" class="sc-trayentry" id="trayEntry">📥 確認トレイ<span class="sc-badge" id="trayBadge" hidden>0</span></button>
 
     <!-- Eight風 一覧UI: 全件をキャッシュから即表示し、検索バー・並び替えで絞り込む -->
     <div class="eightbar">
@@ -557,6 +640,39 @@
     </div>
   </section>
 
+  <!-- 確認トレイ（スマホ撮影した名刺の下書き一覧） -->
+  <section data-view="tray" id="view-tray" hidden>
+    <div class="sc-note">撮影した名刺の読み取り結果です。内容を確認して「登録」すると名刺DBに追加されます。</div>
+    <div id="trayBody"></div>
+  </section>
+
+  <!-- 下書きの確認・編集 -->
+  <section data-view="draft" id="view-draft" hidden>
+    <div id="draftBody"></div>
+  </section>
+
+  <!-- 撮影（フルスクリーンのカメラ。ハッシュ #scan の間だけ表示し、離れるとカメラを止める） -->
+  <section data-view="scan" id="view-scan" hidden>
+    <div class="sc-root" id="scanRoot">
+      <video id="scanVideo" class="sc-video" playsinline muted autoplay></video>
+      <div class="sc-guide" id="scanGuide"></div>
+      <div class="sc-top">
+        <button type="button" class="sc-x" id="scanClose" aria-label="閉じる">×</button>
+        <div class="sc-title" id="scanTitle"></div>
+        <div class="sc-count" id="scanCount"></div>
+      </div>
+      <div class="sc-hint" id="scanHint"></div>
+      <div class="sc-fallback" id="scanFallback" hidden></div>
+      <div class="sc-bottom">
+        <button type="button" class="sc-side" id="scanDone">完了</button>
+        <button type="button" class="sc-shutter" id="scanShutter" aria-label="撮影"></button>
+        <button type="button" class="sc-side" id="scanOrient">横型</button>
+      </div>
+      <div class="sc-preview" id="scanPreview" hidden></div>
+      <input type="file" id="scanFile" accept="image/*" capture="environment" hidden>
+    </div>
+  </section>
+
   <!-- 設定 -->
   <section data-view="settings" id="view-settings" hidden>
     <div class="heading">ゴミ箱</div>
@@ -570,6 +686,7 @@
     </div>
     <div id="trashList"></div>
   </section>
+  <button type="button" id="scanFab" class="sc-fab" aria-label="名刺を撮影" hidden>📷</button>
 </div>
 
 <div id="toast"></div>
@@ -699,7 +816,13 @@
     restoreCards: '復元しています…',
     purgeCards: '完全に削除しています…',
     listTrash: 'ゴミ箱を取得中…',
-    searchText: 'メモ・履歴を検索中…'
+    searchText: 'メモ・履歴を検索中…',
+    scanCard: '名刺を送信中…',
+    listDrafts: '確認トレイを読み込み中…',
+    retryDraft: '再読取中…',
+    confirmDraft: '登録しています…',
+    discardDraft: '破棄しています…',
+    draftImage: '画像を取得中…'
   };
   function busyMessageFor(action){ return BUSY_MESSAGES[action] || '処理中…'; }
 
@@ -719,12 +842,19 @@
         var creds = getCreds() || {};
         body = Object.assign({ action:action, user:creds.user, pass:creds.pass }, extra||{});
       }
-      var res = await fetch(GAS_URL, {
-        method:'POST',
-        headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body: JSON.stringify(body)
-      });
-      var json = await res.json();
+      // opts.timeoutMs 指定時のみ、その時間で通信を打ち切る（撮影キューの送信用。未指定の既存呼び出しは従来どおり）
+      var ctrl = (opts && opts.timeoutMs && typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var tmr = ctrl ? setTimeout(function(){ ctrl.abort(); }, opts.timeoutMs) : null;
+      var json;
+      try {
+        var res = await fetch(GAS_URL, {
+          method:'POST',
+          headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body: JSON.stringify(body),
+          signal: ctrl ? ctrl.signal : undefined
+        });
+        json = await res.json();
+      } finally { if(tmr){ clearTimeout(tmr); } }
       // token失効時は既存の 'auth' ハンドリング(各呼び出し元のdoLogout)に相乗りさせる
       if(json && json.error === 'AUTH'){ clearToken(); json.error = 'auth'; }
       return json;
@@ -972,6 +1102,7 @@
     // （両方で呼ぶとroute()が二重実行され、loadStats等が二重に走ってしまうため）
     if(!location.hash){ location.hash = '#home'; } else { route(); }
     loadBootData();
+    if(typeof scanInit==='function'){ scanInit(); }
   }
 
   // bootstrap(上部3カード・タグ候補・イベント名・詳細検索フィルタ)を一覧描画後に非同期取得。
@@ -987,6 +1118,7 @@
         mergeTagCandidates(boot.tags && boot.tags.items);
         applyStats(boot.stats);
         if(boot.newCards){ BOOT_NEWCARDS = boot.newCards; }
+        if(typeof scanSetDraftCount === 'function'){ scanSetDraftCount(boot.draftCount); }
       } else if(r && r.error==='auth'){ doLogout(); }
     } catch(e){ /* 上部カード等が更新されないだけなので握りつぶす */ }
   }
@@ -998,7 +1130,7 @@
     var h = location.hash.replace(/^#/,'') || 'home';
     var parts = h.split('/');
     var view = parts[0], param = parts[1];
-    var titleMap = { home:'名刺検索', search:'検索結果', 'new':'新着名刺', review:'整理モード', person:'人物詳細', sns:'SNS確認', settings:'設定' };
+    var titleMap = { home:'名刺検索', search:'検索結果', 'new':'新着名刺', review:'整理モード', person:'人物詳細', sns:'SNS確認', settings:'設定', tray:'確認トレイ', draft:'下書きの確認', scan:'撮影' };
 
     if(view==='search'){
       eightLeaveHome_();
@@ -1015,7 +1147,8 @@
       loadStats();
       return;
     }
-    if(['home','new','review','person','sns','settings'].indexOf(view)===-1) view='home';
+    if(['home','new','review','person','sns','settings','tray','draft','scan'].indexOf(view)===-1) view='home';
+    if(view==='scan' && !scanSession){ location.replace('#home'); return; } // 撮影設定なし(リロード直後など)はホームへ
     eightLeaveHome_();
     showView(view);
     EL('backBtn').hidden = (view==='home');
@@ -1026,9 +1159,12 @@
     else if(view==='person'){ initPersonView(param); }
     else if(view==='sns'){ initSnsView(param); }
     else if(view==='settings'){ initSettingsView(); }
+    else if(view==='tray'){ initTrayView(); }
+    else if(view==='draft'){ initDraftView(param); }
+    else if(view==='scan'){ initScanView(); }
   }
   function showView(name){
-    ['home','new','review','person','sns','settings'].forEach(function(v){ EL('view-'+v).hidden = (v!==name); });
+    ['home','new','review','person','sns','settings','tray','draft','scan'].forEach(function(v){ EL('view-'+v).hidden = (v!==name); });
   }
   EL('backBtn').onclick = function(){
     if(window.history.length>1){ window.history.back(); } else { location.hash='#home'; }
@@ -2187,7 +2323,8 @@
   // ==================== Eight風 一覧UI（IndexedDBキャッシュ＋listLite/listDelta/getThumbs） ====================
   // LIST_SCHEMA 3: nk(ニックネーム)を追加。schema が違う一覧キャッシュは捨てて取り直す。
   // IDB_VERSION 2: 一覧に検索用キー(k/e/p/a/i/ev/tg)を追加したスキーマ。旧(v1)の一覧キャッシュは破棄して取り直す。
-  var IDB_NAME = 'meishi', IDB_VERSION = 2, IDB_LIST_KEY = 'v2', LIST_SCHEMA = 3;
+  // IDB_VERSION 3: スマホ撮影の送信キュー用ストア scanQueue を追加（list / thumbs は変更しない）。
+  var IDB_NAME = 'meishi', IDB_VERSION = 3, IDB_LIST_KEY = 'v2', LIST_SCHEMA = 3;
   function idbOpen(){
     return new Promise(function(resolve, reject){
       if(!('indexedDB' in window)){ reject(new Error('no_indexeddb')); return; }
@@ -2199,6 +2336,7 @@
         }
         if(!db.objectStoreNames.contains('list')) db.createObjectStore('list');
         if(!db.objectStoreNames.contains('thumbs')) db.createObjectStore('thumbs');
+        if(!db.objectStoreNames.contains('scanQueue')) db.createObjectStore('scanQueue', { keyPath:'clientId' });
       };
       req.onsuccess = function(){ resolve(req.result); };
       req.onerror = function(){ reject(req.error); };
@@ -2924,6 +3062,615 @@
     BOOT_NEWCARDS = null;
     toast((failed ? '一部失敗しました。' : '') + '完全削除 '+done+'件（履歴 '+hist+'行・人物レコード '+person+'件を削除／画像 '+files+'件をDriveのゴミ箱へ）');
   }
+</script>
+<script>
+  // ==================== スマホ撮影登録（撮影 → 送信キュー → 確認トレイ → 本登録） ====================
+  // 撮影: #scan ルート（離れるとカメラ停止）。送信キュー: IndexedDB scanQueue（clientId=UUID で冪等）。
+  // 確認トレイ: #tray（下書き一覧）/ #draft/<id>（編集して登録・破棄・再読取）。
+  var SCAN_LONG_EDGE = 1600, SCAN_JPEG_Q = 0.85;   // 本体: 長辺1600px・JPEG品質0.85
+  var SCAN_THUMB_W = 480, SCAN_THUMB_Q = 0.70;     // 一覧サムネ: ingest.py と同仕様（表面のみ・幅480px・JPEG品質70）
+  var SCAN_FIELDS = [
+    { k:'company', l:'会社名' }, { k:'name', l:'氏名' }, { k:'kana', l:'ふりがな' },
+    { k:'department', l:'部署' }, { k:'title', l:'役職' }, { k:'email', l:'メール', t:'email' },
+    { k:'tel', l:'電話', t:'tel' }, { k:'mobile', l:'携帯', t:'tel' }, { k:'fax', l:'FAX', t:'tel' },
+    { k:'postal', l:'郵便番号' }, { k:'address', l:'住所' }, { k:'url', l:'URL', t:'url' }, { k:'memo', l:'メモ', area:true }
+  ];
+  var scanSession = null;    // 撮影中 {mode,date,event,cont,side,front,back,count,portrait,fallback}
+  var scanStream = null;
+  var scanCounts = { server:0 };
+  var scanDrafts = {};       // draftId → draft
+  var scanDraftList = [];    // 確認トレイ（撮影順）
+  var scanSetupOk = true;
+  var scanThumbs = {};       // thumbImageId → base64
+  var SQ = { items:[], running:false, timer:null, openId:null, busy:false };
+
+  function scanLS(k, v){
+    try { if(v === undefined){ return localStorage.getItem(k); } localStorage.setItem(k, v); } catch(e){}
+    return null;
+  }
+  function scanUuid(){
+    if(window.crypto && window.crypto.randomUUID){ try { return window.crypto.randomUUID(); } catch(e){} }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){ var r = Math.random()*16|0; return (c==='x' ? r : (r&3|8)).toString(16); });
+  }
+  function scanViewName(){ return (location.hash || '').replace(/^#/, '').split('/')[0]; }
+
+  // ---------- バッジ・入口 ----------
+  function scanSetDraftCount(n){
+    if(typeof n === 'number'){ scanCounts.server = n; }
+    scanUpdateBadge();
+  }
+  function scanUpdateBadge(){
+    var total = (scanCounts.server || 0) + SQ.items.length;
+    var b = EL('trayBadge');
+    b.textContent = total; b.hidden = total <= 0;
+  }
+  function scanFabUpdate(){
+    var v = scanViewName();
+    EL('scanFab').hidden = !(v === '' || v === 'home');
+  }
+
+  // ---------- 撮影前シート ----------
+  function scanOpenSheet(){
+    var mode = scanLS('msScanMode') === 'double' ? 'double' : 'single';
+    var cont = scanLS('msScanCont') === '1';
+    var evs = (typeof EVENT_NAMES !== 'undefined' ? EVENT_NAMES : []).slice(0, 6);
+    openModal('<div class="modaltitle">名刺を撮影</div>'
+      + '<div class="sc-seg" id="scMode"><button type="button" data-v="single">片面</button><button type="button" data-v="double">両面（表・裏）</button></div>'
+      + '<div class="fieldrow"><label class="sc-lbl">交換日</label><input type="date" id="scDate" value="'+todayStr()+'"></div>'
+      + '<div class="fieldrow"><label class="sc-lbl">イベント名</label><input type="text" id="scEvent" list="eventNamesList" placeholder="選択、または新しく入力" autocomplete="off"></div>'
+      + (evs.length ? '<div class="evchips" id="scEvChips">'+evs.map(function(e){ return '<div class="evchip" data-n="'+esc(e.name)+'">'+esc(e.name)+'</div>'; }).join('')+'</div>' : '')
+      + '<div class="fieldrow"><label class="chkline"><input type="checkbox" id="scCont"> 連続撮影（確定後すぐ次の名刺へ）</label></div>'
+      + '<div class="formsave" style="padding:14px 0 0;"><button type="button" id="scCancel">キャンセル</button><button type="button" class="primary" id="scStart">撮影開始</button></div>');
+    var cur = mode;
+    function paintMode(){
+      Array.prototype.forEach.call(EL('scMode').children, function(b){ b.classList.toggle('on', b.getAttribute('data-v') === cur); });
+    }
+    paintMode();
+    EL('scCont').checked = cont;
+    Array.prototype.forEach.call(EL('scMode').children, function(b){ b.onclick = function(){ cur = b.getAttribute('data-v'); paintMode(); }; });
+    Array.prototype.forEach.call(document.querySelectorAll('#scEvChips .evchip'), function(c){
+      c.onclick = function(){ EL('scEvent').value = c.getAttribute('data-n'); };
+    });
+    EL('scCancel').onclick = closeModal;
+    EL('scStart').onclick = function(){
+      var date = EL('scDate').value;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ toast('交換日を入力してください'); return; }
+      var c2 = EL('scCont').checked;
+      scanLS('msScanMode', cur); scanLS('msScanCont', c2 ? '1' : '0');
+      scanSession = { mode:cur, date:date, event:EL('scEvent').value.trim(), cont:c2, side:'front', front:null, back:null, count:0, portrait:false, fallback:false };
+      closeModal();
+      location.hash = '#scan';
+    };
+  }
+
+  // ---------- カメラ ----------
+  function initScanView(){
+    if(!scanSession){ location.replace('#home'); return; }
+    scanSession.side = 'front'; scanSession.front = null; scanSession.back = null;
+    EL('scanPreview').hidden = true;
+    scanRenderUi();
+    scanStartCamera();
+  }
+  function scanRenderUi(){
+    var s = scanSession; if(!s) return;
+    var dbl = s.mode === 'double';
+    EL('scanTitle').textContent = dbl ? (s.side === 'front' ? '表面を撮影' : '裏面を撮影') : '名刺を撮影';
+    EL('scanHint').textContent = dbl
+      ? (s.side === 'front' ? '1/2　表面を枠に合わせて撮影してください' : '2/2　「裏面を撮影」してください')
+      : '名刺を枠に合わせて撮影してください';
+    var q = SQ.items.length;
+    EL('scanCount').textContent = s.cont ? ('撮影 '+s.count+'枚' + (q ? ' / 送信待ち '+q : '')) : '';
+    EL('scanDone').textContent = s.cont ? '完了' : '閉じる';
+    EL('scanOrient').textContent = s.portrait ? '縦型' : '横型';
+    EL('scanGuide').hidden = s.fallback;
+    EL('scanOrient').style.visibility = s.fallback ? 'hidden' : 'visible';
+    scanLayoutGuide();
+  }
+  function scanLayoutGuide(){
+    var root = EL('scanRoot'), g = EL('scanGuide');
+    var cw = root.clientWidth, ch = root.clientHeight;
+    var ar = (scanSession && scanSession.portrait) ? 55/91 : 91/55;   // 名刺 91x55mm
+    var w = Math.min(cw*0.9, ch*0.6*ar);
+    g.style.width = w+'px'; g.style.height = (w/ar)+'px';
+  }
+  async function scanStartCamera(){
+    if(scanStream || !scanSession) return;
+    EL('scanFallback').hidden = true;
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      scanUseFallback('このブラウザ・接続ではカメラを直接使えません。'); return;
+    }
+    try {
+      var st = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ ideal:1920 } }, audio:false });
+      if(!scanSession || scanViewName() !== 'scan'){ st.getTracks().forEach(function(t){ t.stop(); }); return; } // 取得待ちの間に画面を離れた
+      scanStream = st;
+      var v = EL('scanVideo');
+      v.srcObject = st;
+      try { await v.play(); } catch(e){}
+      scanSession.fallback = false;
+      scanRenderUi();
+    } catch(e){
+      var denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+      scanUseFallback(denied ? 'カメラの使用が許可されていません。' : 'カメラを起動できませんでした。');
+    }
+  }
+  function scanStopCamera(){
+    if(scanStream){ scanStream.getTracks().forEach(function(t){ try { t.stop(); } catch(e){} }); scanStream = null; }
+    var v = EL('scanVideo'); if(v){ try { v.pause(); } catch(e){} v.srcObject = null; }
+  }
+  function scanUseFallback(msg){
+    if(!scanSession) return;
+    scanSession.fallback = true;
+    var f = EL('scanFallback');
+    f.innerHTML = esc(msg)+'<br>端末のカメラアプリで撮影してください。<br><button type="button" id="scanFallbackBtn">📷 撮影する</button>';
+    f.hidden = false;
+    EL('scanFallbackBtn').onclick = function(){ EL('scanFile').click(); };
+    scanRenderUi();
+  }
+  function scanShutter(){
+    if(!scanSession) return;
+    if(scanSession.fallback || !scanStream){ EL('scanFile').click(); return; }
+    var v = EL('scanVideo');
+    if(!v.videoWidth){ toast('カメラの準備中です'); return; }
+    // ガイド枠（画面座標）→ 映像座標。video は object-fit:cover で画面全体に表示している
+    var root = EL('scanRoot').getBoundingClientRect(), g = EL('scanGuide').getBoundingClientRect();
+    var vw = v.videoWidth, vh = v.videoHeight;
+    var sc = Math.max(root.width/vw, root.height/vh);
+    var ox = (root.width - vw*sc)/2, oy = (root.height - vh*sc)/2;
+    var sx = ((g.left - root.left) - ox)/sc, sy = ((g.top - root.top) - oy)/sc, sw = g.width/sc, sh = g.height/sc;
+    sx = Math.max(0, sx); sy = Math.max(0, sy);
+    sw = Math.min(sw, vw - sx); sh = Math.min(sh, vh - sy);
+    scanAcceptCanvas(scanCropCanvas(v, sx, sy, sw, sh));
+  }
+  function scanCropCanvas(src, sx, sy, sw, sh){
+    var k = Math.min(1, SCAN_LONG_EDGE / Math.max(sw, sh));
+    var cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(sw*k)); cv.height = Math.max(1, Math.round(sh*k));
+    cv.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    return cv;
+  }
+  function scanThumbB64(cv){
+    var k = Math.min(1, SCAN_THUMB_W / cv.width);
+    var t = document.createElement('canvas');
+    t.width = Math.max(1, Math.round(cv.width*k)); t.height = Math.max(1, Math.round(cv.height*k));
+    t.getContext('2d').drawImage(cv, 0, 0, t.width, t.height);
+    return t.toDataURL('image/jpeg', SCAN_THUMB_Q).split(',')[1];
+  }
+  // getUserMedia 不可時: 端末カメラ(<input capture>)で撮った写真を縮小して取り込む
+  function scanFromFile(file){
+    if(!file) return;
+    var url = URL.createObjectURL(file), img = new Image();
+    img.onload = function(){
+      var k = Math.min(1, SCAN_LONG_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+      var cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.naturalWidth*k)); cv.height = Math.max(1, Math.round(img.naturalHeight*k));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      scanAcceptCanvas(cv);
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); toast('画像を読み込めませんでした'); };
+    img.src = url;
+  }
+  // 撮影した1面（切り出し済み canvas）を受け取り、次の手順（裏面 or プレビュー）へ
+  function scanAcceptCanvas(cv){
+    var s = scanSession; if(!s) return;
+    var url = cv.toDataURL('image/jpeg', SCAN_JPEG_Q);
+    var shot = { full:url.split(',')[1], url:url };
+    if(s.side === 'front'){ shot.thumb = scanThumbB64(cv); s.front = shot; } else { s.back = shot; }
+    if(s.mode === 'double' && !s.back){ s.side = 'back'; scanRenderUi(); return; }
+    scanShowPreview();
+  }
+  function scanShowPreview(){
+    var s = scanSession, dbl = s.mode === 'double';
+    var box = EL('scanPreview');
+    box.innerHTML = '<div class="sc-prevhead">'+(dbl ? '表裏を確認' : '撮影した名刺を確認')+'</div>'
+      + '<div class="sc-previmgs">'
+      + '<div class="sc-prevbox">'+(dbl ? '<span>表</span>' : '')+'<img src="'+s.front.url+'" alt="表面"></div>'
+      + (dbl ? '<div class="sc-prevbox"><span>裏</span><img src="'+s.back.url+'" alt="裏面"></div>' : '')
+      + '</div>'
+      + '<div class="sc-prevbtns"><button type="button" class="primary" id="scPrevOk">'+(s.cont ? '確定して次を撮影' : '確定して読み取る')+'</button>'
+      + '<div class="row">'+(dbl ? '<button type="button" id="scRetakeF">表を撮り直す</button><button type="button" id="scRetakeB">裏を撮り直す</button>' : '<button type="button" id="scRetakeF">撮り直す</button>')+'</div></div>';
+    box.hidden = false;
+    EL('scRetakeF').onclick = function(){ s.front = null; s.side = 'front'; box.hidden = true; scanRenderUi(); };
+    if(dbl){ EL('scRetakeB').onclick = function(){ s.back = null; s.side = 'back'; box.hidden = true; scanRenderUi(); }; }
+    EL('scPrevOk').onclick = function(){ this.disabled = true; scanConfirmShot(); };
+  }
+  async function scanConfirmShot(){
+    var s = scanSession; if(!s || !s.front) return;
+    var item = {
+      clientId: scanUuid(), front:s.front.full, back:(s.back ? s.back.full : ''), thumb:s.front.thumb,
+      exchangeDate:s.date, eventName:s.event, state:'waiting', attempts:0, nextTry:0, createdAt:Date.now(), lastError:''
+    };
+    SQ.items.push(item);
+    await sqSave(item);
+    s.count++;
+    scanUpdateBadge();
+    if(s.cont){
+      s.front = null; s.back = null; s.side = 'front';
+      EL('scanPreview').hidden = true;
+      scanRenderUi();
+      toast(s.count+'枚目を追加しました');
+      sqKick();
+    } else {
+      // 1枚だけ撮る場合: 読み取りが終わったら該当下書きの確認画面を自動で開く
+      if(navigator.onLine !== false && !SQ.busy){ SQ.openId = item.clientId; SQ.busy = true; showBusy('名刺を読み取っています…'); }
+      location.replace('#home');
+      sqKick();
+    }
+  }
+  function scanExit(){
+    if(window.history.length > 1){ window.history.back(); } else { location.replace('#home'); }
+  }
+
+  // ---------- 送信キュー（IndexedDB scanQueue） ----------
+  function sqIdbRun(mode, fn){
+    return idbOpen().then(function(db){
+      return new Promise(function(resolve, reject){
+        var tx = db.transaction('scanQueue', mode), out = fn(tx.objectStore('scanQueue'));
+        tx.oncomplete = function(){ resolve(out && out.result); };
+        tx.onerror = tx.onabort = function(){ reject(tx.error); };
+      });
+    });
+  }
+  function sqSave(item){ return sqIdbRun('readwrite', function(st){ st.put(item); }).catch(function(){ /* IndexedDB不可でもメモリ上で送信は続ける */ }); }
+  function sqRemove(item){
+    SQ.items = SQ.items.filter(function(x){ return x !== item; });
+    scanUpdateBadge();
+    return sqIdbRun('readwrite', function(st){ st.delete(item.clientId); }).catch(function(){});
+  }
+  async function sqInit(){
+    try {
+      var all = await sqIdbRun('readonly', function(st){ return st.getAll(); });
+      SQ.items = (all || []).sort(function(a, b){ return a.createdAt - b.createdAt; });
+      SQ.items.forEach(function(it){ if(it.state === 'sending'){ it.state = 'waiting'; } }); // 前回送信中に閉じた分は再送（clientId で冪等）
+    } catch(e){}
+    scanUpdateBadge();
+    sqKick();
+  }
+  function sqBackoffMs(n){ return Math.min(300, 5 * Math.pow(2, Math.max(0, n-1))) * 1000; }  // 5,10,20,…最大300秒
+  function sqKick(){
+    clearTimeout(SQ.timer);
+    if(SQ.running) return;
+    if(navigator.onLine === false) return;   // online イベントで再開
+    var now = Date.now(), due = null, soon = null;
+    SQ.items.forEach(function(it){
+      if(it.state !== 'waiting') return;
+      if(it.nextTry <= now){ if(!due) due = it; } else if(soon === null || it.nextTry < soon){ soon = it.nextTry; }
+    });
+    if(due){ sqProcess(due); }
+    else if(soon !== null){ SQ.timer = setTimeout(sqKick, Math.max(1000, soon - now)); }
+  }
+  function sqReleaseBusy(item){
+    if(SQ.openId === item.clientId){ SQ.openId = null; if(SQ.busy){ SQ.busy = false; hideBusy(); } return true; }
+    return false;
+  }
+  async function sqProcess(item){
+    SQ.running = true;
+    item.state = 'sending'; scanRefreshIfTray();
+    var r = null, netErr = false;
+    try {
+      r = await api('scanCard', { clientId:item.clientId, front:item.front, back:item.back, thumb:item.thumb,
+        exchangeDate:item.exchangeDate, eventName:item.eventName }, { silent:true, timeoutMs:100000 });
+    } catch(e){ netErr = true; }
+    var d = r && r.ok && r.data && r.data.draft;
+    if(r && r.error === 'auth'){
+      sqReleaseBusy(item); item.state = 'waiting'; SQ.running = false; doLogout(); return;  // キューは IndexedDB に残る
+    }
+    if(d && d.status === 'queued'){
+      // サーバ側が読み取り中（前回の送信が途中）。少し待って同じ clientId で再確認
+      item.state = 'waiting'; item.nextTry = Date.now() + 8000; item.lastError = '';
+      if(sqReleaseBusy(item)){ toast('読み取り中です。確認トレイで確認できます'); }
+    } else if(d){
+      // 成功: サーバに画像が保存済みなので端末側の画像データは削除する
+      await sqRemove(item);
+      if(!scanDrafts[d.draftId]){ scanDraftList.push(d); scanCounts.server++; }
+      scanDrafts[d.draftId] = d;
+      scanUpdateBadge();
+      if(sqReleaseBusy(item)){ location.hash = '#draft/' + d.draftId; }
+    } else {
+      var code = r && r.error;
+      if(code === 'missing_front' || code === 'missing_client_id'){
+        item.state = 'failed'; item.lastError = '送信できないデータです（' + code + '）';
+      } else if(code === 'not_setup'){
+        item.state = 'waiting'; item.nextTry = Date.now() + 60000;
+        item.lastError = 'サーバ側の準備（setupScanFeature）が未実施です';
+      } else {
+        item.attempts++; item.state = 'waiting'; item.nextTry = Date.now() + sqBackoffMs(item.attempts);
+        item.lastError = netErr ? '通信できませんでした（自動で再送します）' : ('サーバエラー: ' + String(code || '不明') + '（自動で再送します）');
+      }
+      if(sqReleaseBusy(item)){ toast(item.state === 'failed' ? '送信に失敗しました' : '送信待ちに入れました。確認トレイから状況を確認できます'); }
+    }
+    if(item.state !== 'sending' && SQ.items.indexOf(item) >= 0){ await sqSave(item); }
+    SQ.running = false;
+    scanRefreshIfTray();
+    if(scanViewName() === 'scan'){ scanRenderUi(); }
+    sqKick();
+  }
+  window.addEventListener('online', sqKick);
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden){ if(scanViewName() === 'scan'){ scanStopCamera(); } return; }
+    if(scanViewName() === 'scan' && scanSession && !scanSession.fallback){ scanStartCamera(); }
+    sqKick();
+  });
+  window.addEventListener('pagehide', scanStopCamera);
+
+  // ---------- 確認トレイ ----------
+  function scanRefreshIfTray(){ if(scanViewName() === 'tray'){ scanRenderTray(); } }
+  function scanLoadDrafts(){
+    return api('listDrafts', {}).then(function(r){
+      if(r && r.error === 'auth'){ doLogout(); return; }
+      if(r && r.ok && r.data){
+        scanDraftList = r.data.items || [];
+        scanDrafts = {};
+        scanDraftList.forEach(function(d){ scanDrafts[d.draftId] = d; });
+        scanCounts.server = scanDraftList.length;
+        scanSetupOk = r.data.setup !== false;
+        scanUpdateBadge();
+      }
+    }).catch(function(){ toast('確認トレイを取得できませんでした'); });
+  }
+  function initTrayView(){
+    EL('trayBody').innerHTML = '<div class="spin">読み込み中…</div>';
+    scanLoadDrafts().then(function(){ if(scanViewName() === 'tray'){ scanRenderTray(); } });
+  }
+  function scanQueueLabel(it){
+    return it.state === 'sending' ? '送信中' : (it.state === 'failed' ? '送信失敗' : '送信待ち');
+  }
+  function scanRenderTray(){
+    var h = '';
+    if(SQ.items.length){
+      h += '<div class="sc-sec">送信待ち '+SQ.items.length+'件（通信できるようになると自動で送信します）</div>';
+      SQ.items.forEach(function(it){
+        h += '<div class="sc-row" data-q="'+esc(it.clientId)+'" style="cursor:default">'
+          + '<div class="sc-thumb"><img src="data:image/jpeg;base64,'+it.thumb+'" alt=""></div>'
+          + '<div class="sc-body"><div class="sc-name"><span class="sc-st'+(it.state === 'failed' ? ' err' : '')+'">'+scanQueueLabel(it)+'</span>'+(it.back ? '表裏' : '片面')+'</div>'
+          + '<div class="sc-sub">'+esc([fmtDate(it.exchangeDate), it.eventName].filter(Boolean).join('　'))+'</div>'
+          + (it.lastError ? '<div class="sc-sub" style="color:#b00020">'+esc(it.lastError)+'</div>' : '')+'</div>'
+          + (it.state === 'sending' ? '' : '<div class="sc-rowbtns"><button type="button" data-qact="retry">再送</button><button type="button" data-qact="del">削除</button></div>')
+          + '</div>';
+      });
+    }
+    if(!scanSetupOk){ h = '<div class="sc-err">サーバ側の準備（GASの setupScanFeature の実行）がまだ完了していません。</div>' + h; }
+    if(scanDraftList.length){
+      h += '<div class="sc-sec">未確認 '+scanDraftList.length+'件</div>';
+      scanDraftList.forEach(function(d){
+        var ex = d.extracted || {};
+        var ok = d.status === 'extracted';
+        var sub = [ex.company, ex.title].filter(Boolean).join(' / ');
+        h += '<div class="sc-row" data-d="'+esc(d.draftId)+'">'
+          + '<div class="sc-thumb" data-th="'+esc(d.thumbImageId || '')+'"></div>'
+          + '<div class="sc-body"><div class="sc-name">'+esc(ex.name || (ok ? '(氏名未取得)' : '(読み取れませんでした)'))+'</div>'
+          + '<div class="sc-sub">'+(sub ? esc(sub) : '&nbsp;')+'</div>'
+          + '<div class="sc-sub"><span class="sc-st '+(ok ? 'ok' : 'err')+'">'+(ok ? '読取済' : '読取失敗')+'</span>'+(d.hasBack ? '表裏　' : '')+esc([fmtDate(d.exchangeDate), d.eventName].filter(Boolean).join('　'))+'</div></div>'
+          + '</div>';
+      });
+    }
+    if(!SQ.items.length && !scanDraftList.length){ h += '<div class="sc-empty">未確認の名刺はありません</div>'; }
+    var body = EL('trayBody');
+    body.innerHTML = h;
+    Array.prototype.forEach.call(body.querySelectorAll('[data-d]'), function(row){
+      row.onclick = function(){ location.hash = '#draft/' + row.getAttribute('data-d'); };
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('[data-q]'), function(row){
+      var it = SQ.items.filter(function(x){ return x.clientId === row.getAttribute('data-q'); })[0];
+      Array.prototype.forEach.call(row.querySelectorAll('[data-qact]'), function(b){
+        b.onclick = function(e){
+          e.stopPropagation();
+          if(b.getAttribute('data-qact') === 'retry'){ it.state = 'waiting'; it.nextTry = 0; sqSave(it); scanRenderTray(); sqKick(); }
+          else { scanConfirmDeleteQueued(it); }
+        };
+      });
+    });
+    scanPaintThumbs();
+  }
+  function scanConfirmDeleteQueued(it){
+    openModal('<div class="modaltitle">この撮影データを削除しますか？</div>'
+      + '<div class="confirmbox">まだ送信されていないため、削除すると読み取りもできなくなります。</div>'
+      + '<div class="formsave" style="padding:14px 0 0;"><button type="button" id="scQDelNo">キャンセル</button><button type="button" class="primary dangerbtn" id="scQDelYes">削除する</button></div>');
+    EL('scQDelNo').onclick = closeModal;
+    EL('scQDelYes').onclick = function(){ closeModal(); sqRemove(it).then(scanRefreshIfTray); };
+  }
+  // サムネは既存の getThumbs（最大30件/回）で取得して貼る
+  function scanPaintThumbs(){
+    var cells = Array.prototype.slice.call(document.querySelectorAll('#trayBody .sc-thumb[data-th]'));
+    var need = [];
+    cells.forEach(function(c){
+      var id = c.getAttribute('data-th');
+      if(!id) return;
+      if(scanThumbs[id]){ c.innerHTML = '<img src="data:image/jpeg;base64,'+scanThumbs[id]+'" alt="">'; }
+      else if(need.indexOf(id) < 0){ need.push(id); }
+    });
+    for(var i = 0; i < need.length; i += 30){
+      (function(ids){
+        api('getThumbs', { ids:ids }, { silent:true }).then(function(r){
+          if(!(r && r.ok && r.data)) return;
+          Object.keys(r.data).forEach(function(k){ scanThumbs[k] = r.data[k]; });
+          cells.forEach(function(c){
+            var id = c.getAttribute('data-th');
+            if(ids.indexOf(id) >= 0 && scanThumbs[id] && document.body.contains(c)){ c.innerHTML = '<img src="data:image/jpeg;base64,'+scanThumbs[id]+'" alt="">'; }
+          });
+        }).catch(function(){});
+      })(need.slice(i, i + 30));
+    }
+  }
+
+  // ---------- 下書きの確認・編集 ----------
+  function initDraftView(id){
+    var box = EL('draftBody');
+    if(scanDrafts[id]){ scanRenderDraft(scanDrafts[id]); return; }
+    box.innerHTML = '<div class="spin">読み込み中…</div>';
+    scanLoadDrafts().then(function(){
+      if(scanViewName() !== 'draft') return;
+      if(scanDrafts[id]){ scanRenderDraft(scanDrafts[id]); }
+      else { box.innerHTML = '<div class="sc-empty">この下書きは登録済みか破棄されています。<br><br><button type="button" class="sectionbtn" id="draftToTray">確認トレイへ</button></div>'; EL('draftToTray').onclick = function(){ location.replace('#tray'); }; }
+    });
+  }
+  function scanDraftSaved(d){
+    delete scanDrafts[d.draftId];
+    scanDraftList = scanDraftList.filter(function(x){ return x.draftId !== d.draftId; });
+    scanCounts.server = Math.max(0, scanCounts.server - 1);
+    scanUpdateBadge();
+  }
+  function scanRenderDraft(d){
+    var ex = d.extracted || {};
+    var h = '<div class="sc-imgs">'
+      + '<div class="sc-imgwrap" data-side="front"><span class="sc-imgtag">'+(d.hasBack ? '表' : '名刺')+'</span><img alt="" hidden></div>'
+      + (d.hasBack ? '<div class="sc-imgwrap" data-side="back"><span class="sc-imgtag">裏</span><img alt="" hidden></div>' : '')
+      + '</div>';
+    if(d.status === 'error'){ h += '<div class="sc-err">読み取りに失敗しました：'+esc(d.errorMessage || '不明なエラー')+'<br>「再読取」を試すか、内容を手入力してください。</div>'; }
+    var meta = [];
+    if(typeof ex.confidence === 'number' && d.status === 'extracted'){ meta.push('読取の確信度 '+Math.round(ex.confidence*100)+'%'); }
+    if(ex.notes){ meta.push('補足：'+ex.notes); }
+    if(meta.length){ h += '<div class="sc-meta">'+meta.map(esc).join('<br>')+'</div>'; }
+    h += '<div class="sc-form" id="draftForm">';
+    SCAN_FIELDS.forEach(function(f){
+      var v = ex[f.k] == null ? '' : ex[f.k];
+      h += '<div class="sc-f"><label>'+f.l+(f.k === 'name' ? '（必須）' : '')+'</label>'
+        + (f.area ? '<textarea data-k="'+f.k+'">'+esc(v)+'</textarea>' : '<input type="'+(f.t || 'text')+'" data-k="'+f.k+'" value="'+esc(v)+'" autocomplete="off">')+'</div>';
+    });
+    h += '<div class="sc-f2"><div class="sc-f"><label>交換日</label><input type="date" id="draftDate" value="'+esc(String(d.exchangeDate || todayStr()).slice(0, 10))+'"></div>'
+      + '<div class="sc-f"><label>イベント名</label><input type="text" id="draftEvent" list="eventNamesList" value="'+esc(d.eventName || '')+'" autocomplete="off"></div></div>'
+      + '</div>'
+      + '<div class="sc-actions"><button type="button" class="primary" id="draftSave">登録</button>'
+      + '<button type="button" id="draftRetry">再読取</button><button type="button" class="danger" id="draftDiscard">破棄</button></div>';
+    EL('draftBody').innerHTML = h;
+    scanLoadDraftImages(d);
+    EL('draftSave').onclick = function(){ scanSaveDraft(d, false); };
+    EL('draftRetry').onclick = function(){ scanRetryDraft(d); };
+    EL('draftDiscard').onclick = function(){ scanAskDiscard(d); };
+  }
+  function scanLoadDraftImages(d){
+    Array.prototype.forEach.call(document.querySelectorAll('#draftBody .sc-imgwrap'), function(w){
+      var side = w.getAttribute('data-side'), img = w.querySelector('img');
+      api('draftImage', { draftId:d.draftId, side:side }, { silent:true }).then(function(r){
+        if(!(r && r.ok && r.data && r.data.image) || !document.body.contains(w)) return;
+        img.src = 'data:'+(r.data.mime || 'image/jpeg')+';base64,'+r.data.image; img.hidden = false;
+        img.onclick = function(){ scanOpenDraftImage(r.data.image, r.data.mime); };
+      }).catch(function(){});
+    });
+  }
+  // 拡大表示は名刺詳細と同じ操作感（ピンチ・ダブルタップ）
+  function scanOpenDraftImage(b64, mime){
+    var root = EL('modalRoot');
+    root.innerHTML = '<div class="imgviewbg" id="imgViewBg"><button type="button" class="imgviewclose" id="imgViewClose" aria-label="閉じる">×</button>'
+      + '<div class="imgviewstage" id="imgViewStage"><img id="imgViewImg" src="data:'+esc(mime || 'image/jpeg')+';base64,'+b64+'" alt="名刺画像"></div></div>';
+    var bg = EL('imgViewBg');
+    function close(){ if(root.querySelector('#imgViewBg') === bg){ root.innerHTML = ''; } }
+    EL('imgViewClose').onclick = close;
+    bg.addEventListener('click', function(e){ if(e.target === bg || e.target === EL('imgViewStage')){ close(); } });
+    bindPinchZoom(EL('imgViewImg'));
+  }
+  function scanReadDraftForm(){
+    var card = {};
+    Array.prototype.forEach.call(document.querySelectorAll('#draftForm [data-k]'), function(el){ card[el.getAttribute('data-k')] = el.value.trim(); });
+    return card;
+  }
+  async function scanSaveDraft(d, force){
+    var card = scanReadDraftForm();
+    if(!card.name){ toast('氏名を入力してください'); return; }
+    var btn = EL('draftSave'); btn.disabled = true;
+    var r;
+    try {
+      r = await api('confirmDraft', { draftId:d.draftId, card:card, exchangeDate:EL('draftDate').value, eventName:EL('draftEvent').value.trim(), force:!!force });
+    } catch(e){ btn.disabled = false; toast('通信に失敗しました。もう一度お試しください'); return; }
+    btn.disabled = false;
+    if(r && r.error === 'auth'){ doLogout(); return; }
+    if(r && r.ok && r.data && r.data.needsConfirm){ scanShowDup(d, r.data.candidates || []); return; }
+    if(r && r.ok && r.data && r.data.cardId){
+      scanDraftSaved(d);
+      BOOT_NEWCARDS = null;
+      eightReloadFromServer();
+      toast('登録しました');
+      location.replace(scanDraftList.length || SQ.items.length ? '#tray' : '#home');
+      return;
+    }
+    var msg = { in_progress:'登録処理中です。少し待ってからご確認ください', discarded:'この下書きは破棄されています', not_ready:'まだ読み取り中です', missing_required:'氏名を入力してください' }[r && r.error];
+    toast(msg || '登録に失敗しました');
+  }
+  function scanShowDup(d, cands){
+    openModal('<div class="modaltitle">似た名刺が登録済みです</div>'
+      + '<div class="confirmbox">同じ人の可能性があります。重複して登録しますか？</div>'
+      + cands.slice(0, 8).map(function(c){
+          return '<div class="sc-cand"><b>'+esc(c.name || '(氏名なし)')+'</b>　'+esc([c.company, c.title].filter(Boolean).join(' / '))+'<span>'+esc((c.reasons || []).join('・'))+'</span></div>';
+        }).join('')
+      + '<div class="formsave" style="padding:14px 0 0;"><button type="button" id="scDupBack">戻る</button><button type="button" class="primary" id="scDupGo">それでも登録</button></div>');
+    EL('scDupBack').onclick = closeModal;
+    EL('scDupGo').onclick = function(){ closeModal(); scanSaveDraft(d, true); };
+  }
+  async function scanRetryDraft(d){
+    var r;
+    try { r = await api('retryDraft', { draftId:d.draftId }); } catch(e){ toast('通信に失敗しました'); return; }
+    if(r && r.error === 'auth'){ doLogout(); return; }
+    if(r && r.ok && r.data && r.data.draft){
+      var nd = r.data.draft;
+      scanDrafts[nd.draftId] = nd;
+      scanDraftList = scanDraftList.map(function(x){ return x.draftId === nd.draftId ? nd : x; });
+      if(scanViewName() === 'draft'){ scanRenderDraft(nd); }
+      toast(nd.status === 'extracted' ? '読み取り直しました' : '読み取りに失敗しました');
+    } else { toast('再読取に失敗しました'); }
+  }
+  function scanAskDiscard(d){
+    openModal('<div class="modaltitle">この下書きを破棄しますか？</div>'
+      + '<div class="confirmbox">確認トレイから消えます（登録はされません）。</div>'
+      + '<div class="formsave" style="padding:14px 0 0;"><button type="button" id="scDisNo">キャンセル</button><button type="button" class="primary dangerbtn" id="scDisYes">破棄する</button></div>');
+    EL('scDisNo').onclick = closeModal;
+    EL('scDisYes').onclick = async function(){
+      closeModal();
+      var r;
+      try { r = await api('discardDraft', { draftId:d.draftId }); } catch(e){ toast('通信に失敗しました'); return; }
+      if(r && r.error === 'auth'){ doLogout(); return; }
+      if(r && r.ok){ scanDraftSaved(d); toast('破棄しました'); location.replace(scanDraftList.length || SQ.items.length ? '#tray' : '#home'); }
+      else { toast('破棄に失敗しました'); }
+    };
+  }
+
+  // ---------- 配線 ----------
+  EL('scanFab').onclick = scanOpenSheet;
+  EL('trayEntry').onclick = function(){ location.hash = '#tray'; };
+  EL('scanShutter').onclick = scanShutter;
+  EL('scanClose').onclick = scanExit;
+  EL('scanDone').onclick = scanExit;
+  EL('scanOrient').onclick = function(){ if(scanSession){ scanSession.portrait = !scanSession.portrait; scanRenderUi(); } };
+  EL('scanFile').onchange = function(){ var f = this.files && this.files[0]; this.value = ''; scanFromFile(f); };
+  window.addEventListener('resize', function(){ if(scanViewName() === 'scan'){ scanLayoutGuide(); } });
+  window.addEventListener('hashchange', function(){
+    if(scanViewName() !== 'scan'){ scanStopCamera(); scanSession = null; }   // 撮影画面を離れたら必ずカメラを止める
+    scanFabUpdate();
+  });
+  function scanInit(){ scanFabUpdate(); scanUpdateBadge(); sqInit(); }
+
+  // ---------- ?mock=1 用のモック（実GASなしで画面確認できるように） ----------
+  var MOCK_DRAFTS = [], mockScanSeq = 0;
+  var _mockHandleBase = mockHandle;
+  mockHandle = function(action, body){
+    body = body || {};
+    function pend(){ return MOCK_DRAFTS.filter(function(d){ return d.status === 'extracted' || d.status === 'error'; }); }
+    function find(id){ return MOCK_DRAFTS.filter(function(d){ return d.draftId === id; })[0]; }
+    if(action === 'scanCard'){
+      var ex = find('D' + body.clientId);
+      if(ex) return { ok:true, data:{ draft:ex, existing:true } };
+      mockScanSeq++;
+      var dr = { draftId:'D' + body.clientId, clientId:body.clientId, status:'extracted', createdAt:'', frontImageId:'f', backImageId:body.back ? 'b' : '', thumbImageId:'', hasBack:!!body.back,
+        exchangeDate:body.exchangeDate, eventName:body.eventName || '',
+        extracted:{ company:'モック商事'+mockScanSeq, name:'撮影 太郎'+mockScanSeq, kana:'さつえい たろう', department:'営業部', title:'部長', email:'t'+mockScanSeq+'@example.com', tel:'03-0000-000'+mockScanSeq, mobile:'', fax:'', postal:'100-0001', address:'東京都千代田区1-1', url:'', memo:'', confidence:0.91, notes:'' },
+        errorMessage:'', cardId:'', _img:body.front };
+      MOCK_DRAFTS.push(dr);
+      return { ok:true, data:{ draft:dr, existing:false } };
+    }
+    if(action === 'listDrafts'){ return { ok:true, data:{ items:pend(), setup:true } }; }
+    if(action === 'draftImage'){ var d1 = find(body.draftId); return { ok:true, data:{ image:(d1 && d1._img) || null, mime:'image/jpeg' } }; }
+    if(action === 'retryDraft'){ var d2 = find(body.draftId); if(!d2) return { ok:false, error:'not_found' }; d2.status = 'extracted'; d2.errorMessage = ''; return { ok:true, data:{ draft:d2 } }; }
+    if(action === 'discardDraft'){ var d3 = find(body.draftId); if(!d3) return { ok:false, error:'not_found' }; d3.status = 'discarded'; return { ok:true, data:{ draftId:d3.draftId } }; }
+    if(action === 'confirmDraft'){
+      var d4 = find(body.draftId); if(!d4) return { ok:false, error:'not_found' };
+      if(d4.status === 'confirmed') return { ok:true, data:{ draftId:d4.draftId, cardId:d4.cardId, already:true } };
+      if(!body.force && /既存/.test(body.card && body.card.name)){ return { ok:true, data:{ needsConfirm:true, candidates:[{ row:2, id:'M00001', name:'既存 太郎', company:'既存商事', title:'代表取締役', reasons:['同じ会社・氏名'] }] } }; }
+      d4.status = 'confirmed'; d4.cardId = 'MOCK' + d4.draftId.slice(-4);
+      return { ok:true, data:{ draftId:d4.draftId, cardId:d4.cardId } };
+    }
+    var res = _mockHandleBase(action, body);
+    if(action === 'bootstrap' && res && res.data){ res.data.draftCount = pend().length; }
+    return res;
+  };
 </script>
 </body>
 </html>
