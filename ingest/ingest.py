@@ -79,7 +79,7 @@ LIST_THUMB_WIDTH = 480
 LIST_THUMB_QUALITY = 70
 
 # GAS に送る際にリトライしない（=最終的なエラーとして扱う）エラーコード
-GAS_NON_RETRYABLE_ERRORS = {"auth", "missing_required"}
+GAS_NON_RETRYABLE_ERRORS = {"auth", "missing_required", "locked"}
 
 RETRY_DELAYS_SECONDS = [5, 15, 45]  # API呼び出し・GAS送信共通のリトライ間隔
 
@@ -158,6 +158,8 @@ class Config:
     app_pass: str
     watch_dir: Path
     model: str
+    # 取込専用キー(GASのスクリプトプロパティ INGEST_KEY と同じ値)。値はログに出さない
+    ingest_key: str = ""
 
 
 def load_config() -> Config:
@@ -174,6 +176,7 @@ def load_config() -> Config:
     app_pass = os.environ.get("APP_PASS", "")
     watch_dir = Path(os.environ.get("WATCH_DIR", r"E:\namecardscan"))
     model = os.environ.get("MODEL", "claude-sonnet-4-6").strip() or "claude-sonnet-4-6"
+    ingest_key = os.environ.get("INGEST_KEY", "").strip()
 
     return Config(
         gas_url=gas_url,
@@ -181,6 +184,7 @@ def load_config() -> Config:
         app_pass=app_pass,
         watch_dir=watch_dir,
         model=model,
+        ingest_key=ingest_key,
     )
 
 
@@ -616,7 +620,13 @@ def post_gas(
     if non_retryable_errors is None:
         non_retryable_errors = GAS_NON_RETRYABLE_ERRORS
 
-    body_dict: dict[str, Any] = {"user": cfg.app_user, "pass": cfg.app_pass, "action": action}
+    body_dict: dict[str, Any] = {"action": action}
+    if cfg.ingest_key:
+        body_dict["ingestKey"] = cfg.ingest_key
+    # 移行期間の互換: ID/パスがあれば併せて送る(GAS側にINGEST_KEY設定後は不要)
+    if cfg.app_user and cfg.app_pass:
+        body_dict["user"] = cfg.app_user
+        body_dict["pass"] = cfg.app_pass
     body_dict.update(payload)
     body = json.dumps(body_dict, ensure_ascii=False).encode("utf-8")
     headers = {"Content-Type": "text/plain;charset=utf-8"}
@@ -1210,8 +1220,8 @@ def check_config(cfg: Config, require_gas: bool) -> Optional[str]:
     if require_gas:
         if not cfg.gas_url:
             return "GAS_URLが設定されていません(.envを確認してください)"
-        if not cfg.app_user or not cfg.app_pass:
-            return "APP_USER/APP_PASSが設定されていません(.envを確認してください)"
+        if not cfg.ingest_key and not (cfg.app_user and cfg.app_pass):
+            return "INGEST_KEY(またはAPP_USER/APP_PASS)が設定されていません(.envを確認してください)"
     return None
 
 

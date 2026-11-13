@@ -3,3 +3,4 @@ state.json
 logs/
 .venv/
 __pycache__/
+.env.bak_*

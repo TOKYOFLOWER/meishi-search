@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; manifest-src 'self'; connect-src 'self' https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <title>名刺検索 | 銀座東京フラワー</title>
 <style>
   :root{
@@ -848,9 +850,12 @@
       var body;
       if(token){
         body = Object.assign({ action:action, token:token }, extra||{});
-      } else {
+      } else if(action === 'login'){
+        // ID/パスを送るのは login のときだけ（それ以外はトークン無しなら auth が返り、各呼び出し元の doLogout に乗る）
         var creds = getCreds() || {};
         body = Object.assign({ action:action, user:creds.user, pass:creds.pass }, extra||{});
+      } else {
+        body = Object.assign({ action:action }, extra||{});
       }
       // opts.timeoutMs 指定時のみ、その時間で通信を打ち切る（撮影キューの送信用。未指定の既存呼び出しは従来どおり）
       var ctrl = (opts && opts.timeoutMs && typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -1092,22 +1097,31 @@
     EL('loginBtn').disabled = true; EL('loginErr').textContent = '確認中…';
     setCreds({ user:user, pass:pass });
     try {
-      // user/passでログイン→端末トークンを発行。login自体がauthAny_でuser/pass検証を兼ねるため、
+      // user/passでログイン→端末トークンを発行。ID/パスを送るのはこのloginリクエストだけで、
+      // 成功・失敗どちらでも直後にclearCreds()する(以後はトークンのみで通信)。
+      // トークンが取れなければアプリには入らない(起動判定がトークンのみで、トークン無しでは全APIがauthになるため)。
       // ここでbootstrapを待たずにアプリを開ける(一覧描画をブロックしないため意図的にbootstrapは呼ばない)。
-      // GAS側がまだloginに未対応(旧デプロイ・unknown_action)でも、認証ゲートは通過済みなので継続してよい。
       var lr = await api('login', { deviceLabel: (navigator.userAgent||'').slice(0,60) }, { busyMessage:'確認中…' });
-      if(lr && lr.ok && lr.data && lr.data.token){ setToken(lr.data.token); }
-      else if(lr && lr.error === 'auth'){
-        clearCreds(); EL('loginErr').textContent='IDまたはパスワードが違います'; return;
-      } else if(!lr){ throw new Error('network'); }
-      EL('loginErr').textContent='';
-      enterApp();
+      clearCreds();
+      if(lr && lr.ok && lr.data && lr.data.token){
+        setToken(lr.data.token);
+        EL('loginErr').textContent='';
+        enterApp();
+      } else if(lr && lr.error === 'auth'){
+        EL('loginErr').textContent='IDまたはパスワードが違います';
+      } else if(lr && lr.error === 'locked'){
+        EL('loginErr').textContent='試行回数が上限に達しました。15分後にお試しください';
+      } else if(!lr){
+        throw new Error('network');
+      } else {
+        EL('loginErr').textContent='接続に失敗しました（URL設定/通信をご確認ください）';
+      }
     } catch(e){
       clearToken(); clearCreds(); EL('loginErr').textContent='接続に失敗しました（URL設定/通信をご確認ください）';
     } finally { EL('loginBtn').disabled = false; }
   }
 
-  // 自動ログイン: msToken(localStorage、端末に永続)またはセッションのuser/passがあれば、
+  // 自動ログイン: msToken(localStorage、端末に永続)があれば、
   // GAS呼び出しを待たずに即アプリを開く(一覧はIndexedDBキャッシュがあれば即描画)。
   // 認証が実際には無効だった場合は、後続の各GAS呼び出し(listDelta/bootstrap等)がAUTHエラーを
   // 返した時点でdoLogout()によりログイン画面へ戻す。
@@ -1116,7 +1130,7 @@
   // 呼ぶとReferenceErrorになる。setTimeout(fn,0)は実運用(ネットワーク経由の配信でHTMLパーサーが
   // チャンク境界でyieldする場合)ではタイマーがscriptタグの合間に割り込むことがあり不十分だった
   // (実機で確認)。DOMContentLoadedは仕様上、全ての同期scriptの実行完了後にのみ発火するため確実。
-  if(getToken() || getCreds()){
+  if(getToken()){
     if(document.readyState === 'loading'){
       document.addEventListener('DOMContentLoaded', enterApp);
     } else {

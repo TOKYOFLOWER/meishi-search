@@ -3,8 +3,9 @@
  * ------------------------------------------------------------------
  * データ: 非公開スプレッドシート
  * 画面 : GitHub Pages(公開・ガワのみ) から ID/パス付きで本APIを呼ぶ
- * 認証 : スクリプトプロパティ APP_USER / APP_PASS でサーバー側照合
- * → 正しいID/パスが無い限り、データは1件も返さない
+ * 認証 : 端末トークン(login で発行)が基本。ID/パスは login と ping のみ有効で、10回失敗で15分ロック。
+ *        ingest.py は専用キー INGEST_KEY で取込系 action のみ許可（移行期間は INGEST_KEY 未設定ならID/パスも可）
+ * → 正しい認証が無い限り、データは1件も返さない
  * 公開領域(GitHub)には個人情報・パスワードを一切置かない設計。
  * ------------------------------------------------------------------
  */
@@ -14,6 +15,10 @@ var SPREADSHEET_ID = '1gy6viELdXZnGWcNbPGqKmdJjrrteBE7dI1RhS-r8OVY'; // 名刺�
 var SHEET_NAME = '名刺DB';
 var RESULT_LIMIT = 200;
 var PAGES_URL = 'https://tokyoflower.github.io/meishi-search/'; // 検索画面(GitHub Pages)
+// ID/パス認証のロック（総当たり対策）と、取込専用キー(INGEST_KEY)で許可する action
+var INGEST_ACTIONS = ['addCard', 'attachImages', 'setThumb', 'cardsWithoutImage', 'cardsWithoutThumb', 'ping'];
+var PW_FAIL_MAX = 10, PW_LOCK_SEC = 900;
+var PW_FAIL_KEY = 'pwfail', PW_LOCK_KEY = 'pwlock';
 var HEADER = ['id', '会社名', '部署名', '役職', '役職レベル', '氏名', '姓', '名', '業種',
   'メール', '郵便番号', '都道府県', '市区町村', '住所', '会社TEL', '携帯', 'Fax', 'URL',
   '名刺交換日', '取込日'];
@@ -84,9 +89,9 @@ function doGet(e) {
 
 // GitHub Pages からの API 本体（ID/パス照合 → データ）
 function doPost(e) {
-  var out;
+  var out, body;
   try {
-    var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     var authRes = authAny_(body);
     if (!authRes.ok) {
       Utilities.sleep(800); // 総当たり対策の軽い遅延
@@ -179,7 +184,9 @@ function doPost(e) {
       out = { ok: false, error: 'unknown_action' };
     }
   } catch (err) {
-    out = { ok: false, error: String(err) };
+    // 例外の中身（シート名・スタック等）は応答に出さずログにだけ残す
+    Logger.log('doPost: ' + (body && body.action) + ' ' + (err && err.stack ? err.stack : err));
+    out = { ok: false, error: 'server_error' };
   }
   return ContentService.createTextOutput(JSON.stringify(out))
     .setMimeType(ContentService.MimeType.JSON);
@@ -193,15 +200,50 @@ function authOk_(user, pass) {
   return String(user || '') === String(U || '') && String(pass || '') === String(P);
 }
 
-// token があればデバイストークン認証、無ければ従来の user/pass 直送方式（後方互換）
+// 1) token があればデバイストークン認証（ロック対象外）
+// 2) INGEST_KEY 一致なら INGEST_ACTIONS のみ許可（ロック対象外）
+// 3) ID/パス: login と ping のみ（INGEST_KEY 未設定の移行期間は INGEST_ACTIONS も）。失敗10回で15分ロック
 function authAny_(body) {
   if (body && body.token) return auth_(body);
-  return authOk_(body && body.user, body && body.pass) ? { ok: true } : { ok: false, error: 'auth' };
+  var b = body || {};
+  var action = String(b.action || '');
+  var props = PropertiesService.getScriptProperties();
+  var ingestKey = props.getProperty('INGEST_KEY');
+  if (ingestKey && typeof b.ingestKey === 'string' && b.ingestKey === ingestKey) {
+    return INGEST_ACTIONS.indexOf(action) >= 0 ? { ok: true } : { ok: false, error: 'auth' };
+  }
+  if (!b.user && !b.pass) return { ok: false, error: 'auth' }; // 認証情報なしは数えない
+  var cache = CacheService.getScriptCache();
+  if (cache.get(PW_LOCK_KEY)) return { ok: false, error: 'locked' };
+  if (!authOk_(b.user, b.pass)) {
+    var n = (parseInt(cache.get(PW_FAIL_KEY), 10) || 0) + 1;
+    cache.put(PW_FAIL_KEY, String(n), PW_LOCK_SEC);
+    if (n >= PW_FAIL_MAX) cache.put(PW_LOCK_KEY, '1', PW_LOCK_SEC);
+    return { ok: false, error: 'auth' };
+  }
+  cache.remove(PW_FAIL_KEY);
+  var allowed = action === 'login' || action === 'ping' || (!ingestKey && INGEST_ACTIONS.indexOf(action) >= 0);
+  return allowed ? { ok: true } : { ok: false, error: 'auth' };
+}
+// ID/パスのロックを手動解除（GASエディタから実行）
+function unlockPasswordLogin() {
+  var cache = CacheService.getScriptCache();
+  cache.remove(PW_FAIL_KEY);
+  cache.remove(PW_LOCK_KEY);
+  Logger.log('ID/パスのロックを解除しました');
+  return 'ok';
 }
 
 /* ---- デバイストークン（Eight風UI: 永続ログイン） ---- */
 function ensureDevicesSheet_() {
   return ensureSheetWithHeader_(DEVICES_SHEET, DEVICES_HEADER).sheet;
+}
+// 数式インジェクション対策: 文字列が = + - @ タブ 改行 で始まるとスプレッドシートが数式として解釈するため、
+// 先頭に ' を付けてテキスト扱いにする。文字列以外（数値・真偽値・Date・null）と空文字はそのまま返す。
+function safeCell_(v) {
+  if (typeof v !== 'string' || v === '') return v;
+  var ch = v.charAt(0);
+  return (ch === '=' || ch === '+' || ch === '-' || ch === '@' || ch === '\t' || ch === '\r' || ch === '\n') ? "'" + v : v;
 }
 function sha256Hex_(s) {
   var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s || ''), Utilities.Charset.UTF_8);
@@ -235,7 +277,7 @@ function login_(body) {
   var token = genDeviceToken_();
   var sh = ensureDevicesSheet_();
   var now = nowStamp_();
-  sh.appendRow([sha256Hex_(token), label, now, now, false]);
+  sh.appendRow([sha256Hex_(token), safeCell_(label), now, now, false]);
   return { ok: true, data: { token: token } };
 }
 // action=logout: 該当行を revoked=true に
@@ -442,7 +484,7 @@ function historyDateFields_() { return ['contactDate', 'followDate', 'createdAt'
 // header順の1行を書き込む。日付列は書式を'@'(プレーンテキスト)にしてから setValues することで
 // '2026-09-08' 等の文字列がDateへ自動変換されるのを防ぐ。
 function writeSheetRow_(sheet, header, rowNum, record, dateFields) {
-  var values = header.map(function (h) { return record.hasOwnProperty(h) ? record[h] : ''; });
+  var values = header.map(function (h) { return safeCell_(record.hasOwnProperty(h) ? record[h] : ''); });
   dateFields.forEach(function (f) {
     var idx = header.indexOf(f);
     if (idx >= 0) sheet.getRange(rowNum, idx + 1).setNumberFormat('@');
@@ -679,7 +721,7 @@ function importEightCsv(fileId) {
     };
     append.push(header.map(function (h) {
       var key2 = String(h).trim();
-      return record.hasOwnProperty(key2) ? record[key2] : '';
+      return safeCell_(record.hasOwnProperty(key2) ? record[key2] : '');
     }));
   }
   if (append.length) sh.getRange(sh.getLastRow() + 1, 1, append.length, header.length).setValues(append);
@@ -967,7 +1009,8 @@ function addCardToSheet(card) {
 
     var row = header.map(function (h) {
       var key = String(h).trim();
-      return record.hasOwnProperty(key) ? record[key] : '';
+      var val = record.hasOwnProperty(key) ? record[key] : '';
+      return key === THUMB_COL ? val : safeCell_(val); // Drive の fileId（システム値）以外はユーザー入力・OCR結果
     });
 
     var newRowNum = sh.getLastRow() + 1;
@@ -1954,11 +1997,40 @@ function listDelta_(body) {
   var d = listLiteData_();
   return { ok: true, data: { changed: true, items: d.items, deletedIds: d.deletedIds, version: d.version } };
 }
-// ids(最大30) → {id: base64jpeg}。id は listLite が返す thumbFileId（既存の私的Driveフォルダのファイル）
+// シートに登録済みの画像 fileId の集合（名刺DB の画像4列＋サムネ列、drafts の画像3列）。
+// クライアントが任意の fileId を指定して Drive を読ませることを防ぐための許可リスト。
+function knownImageIds_() {
+  var known = {};
+  var cols = IMAGE_COLS.concat([THUMB_COL]);
+  var d = readCards_(cols), c = colIndex_(d.header);
+  d.rows.forEach(function (r) {
+    cols.forEach(function (col) {
+      if (c[col] === undefined) return;
+      var v = String(r[c[col]] == null ? '' : r[c[col]]).trim();
+      if (v) known[v] = true;
+    });
+  });
+  if (draftsReady_()) {
+    var dr = readSheet_(DRAFTS_SHEET);
+    ['frontImageId', 'backImageId', 'thumbImageId'].forEach(function (col) {
+      if (dr.c[col] === undefined) return;
+      dr.rows.forEach(function (r) {
+        var v = String(r[dr.c[col]] == null ? '' : r[dr.c[col]]).trim();
+        if (v) known[v] = true;
+      });
+    });
+  }
+  return known;
+}
+// ids(最大30) → {id: base64jpeg}。id は listLite が返す thumbFileId（既存の私的Driveフォルダのファイル）。
+// シート未登録の ID は Drive に触れず黙って無視する。
 function getThumbs_(body) {
   var ids = Array.isArray(body && body.ids) ? body.ids : [];
   ids = ids.slice(0, THUMB_MAX_IDS).map(function (x) { return String(x || '').trim(); }).filter(function (x) { return x; });
   var out = {};
+  if (!ids.length) return { ok: true, data: out };
+  var known = knownImageIds_();
+  ids = ids.filter(function (x) { return known[x] === true; });
   ids.forEach(function (fid) {
     try {
       var blob = DriveApp.getFileById(fid).getBlob();
@@ -1968,6 +2040,16 @@ function getThumbs_(body) {
     }
   });
   return { ok: true, data: out };
+}
+// fileId のファイルが IMAGE_FOLDER_PROP のフォルダ直下にあるか。取得失敗・プロパティ未設定は false。
+function isInImageFolder_(fileId) {
+  try {
+    var folderId = PropertiesService.getScriptProperties().getProperty(IMAGE_FOLDER_PROP);
+    if (!folderId) return false;
+    var it = DriveApp.getFileById(String(fileId)).getParents();
+    while (it.hasNext()) { if (it.next().getId() === folderId) return true; }
+  } catch (e) { /* 取得できない → 対象外 */ }
+  return false;
 }
 // id(名刺DBのcontactId) + thumbFileId(既知のDriveファイルID) または thumbB64(未保存のbase64、
 // この場合はここでDriveへ保存してfileIdを得る)を受けて thumbFileId 列に書き込む（backfill用）
@@ -1983,6 +2065,8 @@ function setThumb_(body) {
     var rowIdx = -1;
     for (var i = 0; i < d.rows.length; i++) { if (String(d.rows[i][c['id']]) === id) { rowIdx = i; break; } }
     if (rowIdx < 0) return { ok: false, error: 'not_found' };
+    // 指定された fileId は画像フォルダ内のファイルに限る（任意のDriveファイルを紐付けさせない）
+    if (thumbFileId && !isInImageFolder_(thumbFileId)) return { ok: false, error: 'bad_file' };
     if (!thumbFileId) {
       var thumbName = String((body && body.sourceFile) || id).replace(/\.[^.]+$/, '') + '_thumb.jpg';
       thumbFileId = saveImageFile_(getImageFolder_(), thumbName, thumbB64);
@@ -2128,7 +2212,7 @@ function bulkContactApply_(input) {
       if (existingKeys[key]) { skippedDupCount++; return; }
       existingKeys[key] = true;
       var record = { contactId: id, contactDate: iso, eventName: eventName, contactType: '名刺交換', memo: '', followUp: false, followDate: '', createdAt: now };
-      appendRows.push(header.map(function (h) { return record.hasOwnProperty(h) ? record[h] : ''; }));
+      appendRows.push(header.map(function (h) { return safeCell_(record.hasOwnProperty(h) ? record[h] : ''); }));
       createdHistoryCount++;
     });
     if (appendRows.length) {
@@ -2246,7 +2330,6 @@ function snsDetectFromSite_(input) {
   try {
     var resp = UrlFetchApp.fetch(siteUrl, {
       muteHttpExceptions: true, followRedirects: true,
-      validateHttpsCertificates: false,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     var code = resp.getResponseCode();
@@ -3021,6 +3104,7 @@ function getDraft_(draftId) {
   var d = readSheet_(DRAFTS_SHEET), i = findDraftIdx_(d, 'draftId', draftId);
   return i < 0 ? null : draftFromRow_(d.rows[i], d.c);
 }
+var DRAFT_IMAGE_KEYS_ = ['frontImageId', 'backImageId', 'thumbImageId']; // Drive の fileId（システム値）
 // draftId の行の指定列だけ更新（ロック内）。行が無ければ false
 function updateDraft_(draftId, fields) {
   var lock = LockService.getScriptLock();
@@ -3032,7 +3116,7 @@ function updateDraft_(draftId, fields) {
       if (d.c[k] === undefined) return;
       var cell = d.sheet.getRange(i + 2, d.c[k] + 1);
       if (k === 'createdAt' || k === 'exchangeDate') cell.setNumberFormat('@');
-      cell.setValue(fields[k]);
+      cell.setValue(DRAFT_IMAGE_KEYS_.indexOf(k) >= 0 ? fields[k] : safeCell_(fields[k]));
     });
     return true;
   } finally {
@@ -3216,7 +3300,7 @@ function setCardCells_(cardId, values) {
       if (c[k] === undefined) { sh.getRange(1, header.length + 1).setValue(k); header.push(k); c[k] = header.length - 1; }
       var cell = sh.getRange(row, c[k] + 1);
       if (k === '名刺交換日') cell.setNumberFormat('@');
-      cell.setValue(values[k]);
+      cell.setValue(IMAGE_COLS.concat([THUMB_COL]).indexOf(k) >= 0 ? values[k] : safeCell_(values[k])); // fileId 列はシステム値
     });
     return true;
   } finally {
@@ -3292,4 +3376,37 @@ function testScanIdempotency() {
   SCAN_TEST_STUB_ = null;
   Logger.log('testScanIdempotency: ' + (ok ? 'OK（同一clientId 2回で1行）' : 'NG ' + JSON.stringify([r1, r2, idx.length])));
   return ok;
+}
+
+// GASエディタから手動実行: safeCell_ を通した値が数式にならず、元の文字列のまま読めることを一時シートで確認する
+// （A列=書式なし(自動)、B列=書式なしテキスト'@'。名刺交換日などテキスト書式の列でも ' が文字として残らないこと）
+function testFormulaSafe() {
+  var samples = ['=1+1', '+81-90-0000-0000'];
+  var name = '_formula_test_' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+  var sheet = ss_().insertSheet(name);
+  var cells = [];
+  try {
+    sheet.getRange(1, 2, 2, 1).setNumberFormat('@');
+    samples.forEach(function (v, i) {
+      sheet.getRange(i + 1, 1).setValue(safeCell_(v));
+      sheet.getRange(i + 1, 2).setValue(safeCell_(v));
+    });
+    [[1, 1, 'A1 一般'], [2, 1, 'A2 一般'], [1, 2, 'B1 テキスト書式'], [2, 2, 'B2 テキスト書式']].forEach(function (p) {
+      var rg = sheet.getRange(p[0], p[1]);
+      var formula = rg.getFormula(), val = rg.getValue();
+      var noFormula = formula === '';
+      var exact = val === samples[p[0] - 1];
+      cells.push({ cell: p[2], ok: noFormula, exact: exact, textFormat: p[1] === 2, formula: formula, value: String(val) });
+    });
+  } finally {
+    ss_().deleteSheet(sheet);
+  }
+  // ok: 4セルとも数式化していない かつ 一般書式(A列)は元の文字列と一致。
+  // textFormatExact: テキスト書式(B列)の値が元の文字列と完全一致か（参考情報。先頭の ' が文字として残っても数式ではないので安全）
+  var allOk = cells.length === 4 && cells.every(function (x) { return x.ok; }) &&
+    cells.filter(function (x) { return !x.textFormat; }).every(function (x) { return x.exact; });
+  var textExact = cells.filter(function (x) { return x.textFormat; }).every(function (x) { return x.exact; });
+  var res = { ok: allOk, textFormatExact: textExact, cells: cells };
+  Logger.log('testFormulaSafe: ' + (allOk ? 'OK' : 'NG') + ' textFormatExact=' + textExact + ' ' + JSON.stringify(res));
+  return res;
 }
