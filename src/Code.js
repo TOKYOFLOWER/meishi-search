@@ -3394,14 +3394,19 @@ function testFormulaSafe() {
     [[1, 1, 'A1 一般'], [2, 1, 'A2 一般'], [1, 2, 'B1 テキスト書式'], [2, 2, 'B2 テキスト書式']].forEach(function (p) {
       var rg = sheet.getRange(p[0], p[1]);
       var formula = rg.getFormula(), val = rg.getValue();
-      var ok = formula === '' && val === samples[p[0] - 1];
-      cells.push({ cell: p[2], ok: ok, formula: formula, value: String(val) });
+      var noFormula = formula === '';
+      var exact = val === samples[p[0] - 1];
+      cells.push({ cell: p[2], ok: noFormula, exact: exact, textFormat: p[1] === 2, formula: formula, value: String(val) });
     });
   } finally {
     ss_().deleteSheet(sheet);
   }
-  var allOk = cells.length === 4 && cells.every(function (x) { return x.ok; });
-  var res = { ok: allOk, cells: cells };
-  Logger.log('testFormulaSafe: ' + (allOk ? 'OK' : 'NG') + ' ' + JSON.stringify(res));
+  // ok: 4セルとも数式化していない かつ 一般書式(A列)は元の文字列と一致。
+  // textFormatExact: テキスト書式(B列)の値が元の文字列と完全一致か（参考情報。先頭の ' が文字として残っても数式ではないので安全）
+  var allOk = cells.length === 4 && cells.every(function (x) { return x.ok; }) &&
+    cells.filter(function (x) { return !x.textFormat; }).every(function (x) { return x.exact; });
+  var textExact = cells.filter(function (x) { return x.textFormat; }).every(function (x) { return x.exact; });
+  var res = { ok: allOk, textFormatExact: textExact, cells: cells };
+  Logger.log('testFormulaSafe: ' + (allOk ? 'OK' : 'NG') + ' textFormatExact=' + textExact + ' ' + JSON.stringify(res));
   return res;
 }

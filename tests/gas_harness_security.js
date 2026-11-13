@@ -324,6 +324,7 @@ const before2 = Object.keys(sheets).sort().join();
 const tf = g.testFormulaSafe();
 check('S3 testFormulaSafe: 4セルを判定して返す・一時シートは削除される', tf && tf.cells.length === 4 && Object.keys(sheets).sort().join() === before2, JSON.stringify(tf));
 check('S3 testFormulaSafe: 一般書式セル(A1,A2)は数式にならず元の文字列で読める', tf.cells[0].ok && tf.cells[1].ok, JSON.stringify(tf));
+check('S3 testFormulaSafe: ok と textFormatExact を返す', tf.ok === true && typeof tf.textFormatExact === 'boolean', JSON.stringify(tf));
 check('S3 testFormulaSafe: Logger に結果を出す', logs.some((l) => l.indexOf('testFormulaSafe:') === 0), '');
 // 注: B1/B2(テキスト書式)の結果は実 Sheets でしか判定できない。スタブでは非テキスト書式のみ ' 除去を模倣している。
 
