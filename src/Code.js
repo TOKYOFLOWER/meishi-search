@@ -1954,11 +1954,40 @@ function listDelta_(body) {
   var d = listLiteData_();
   return { ok: true, data: { changed: true, items: d.items, deletedIds: d.deletedIds, version: d.version } };
 }
-// ids(最大30) → {id: base64jpeg}。id は listLite が返す thumbFileId（既存の私的Driveフォルダのファイル）
+// シートに登録済みの画像 fileId の集合（名刺DB の画像4列＋サムネ列、drafts の画像3列）。
+// クライアントが任意の fileId を指定して Drive を読ませることを防ぐための許可リスト。
+function knownImageIds_() {
+  var known = {};
+  var cols = IMAGE_COLS.concat([THUMB_COL]);
+  var d = readCards_(cols), c = colIndex_(d.header);
+  d.rows.forEach(function (r) {
+    cols.forEach(function (col) {
+      if (c[col] === undefined) return;
+      var v = String(r[c[col]] == null ? '' : r[c[col]]).trim();
+      if (v) known[v] = true;
+    });
+  });
+  if (draftsReady_()) {
+    var dr = readSheet_(DRAFTS_SHEET);
+    ['frontImageId', 'backImageId', 'thumbImageId'].forEach(function (col) {
+      if (dr.c[col] === undefined) return;
+      dr.rows.forEach(function (r) {
+        var v = String(r[dr.c[col]] == null ? '' : r[dr.c[col]]).trim();
+        if (v) known[v] = true;
+      });
+    });
+  }
+  return known;
+}
+// ids(最大30) → {id: base64jpeg}。id は listLite が返す thumbFileId（既存の私的Driveフォルダのファイル）。
+// シート未登録の ID は Drive に触れず黙って無視する。
 function getThumbs_(body) {
   var ids = Array.isArray(body && body.ids) ? body.ids : [];
   ids = ids.slice(0, THUMB_MAX_IDS).map(function (x) { return String(x || '').trim(); }).filter(function (x) { return x; });
   var out = {};
+  if (!ids.length) return { ok: true, data: out };
+  var known = knownImageIds_();
+  ids = ids.filter(function (x) { return known[x] === true; });
   ids.forEach(function (fid) {
     try {
       var blob = DriveApp.getFileById(fid).getBlob();
@@ -1968,6 +1997,16 @@ function getThumbs_(body) {
     }
   });
   return { ok: true, data: out };
+}
+// fileId のファイルが IMAGE_FOLDER_PROP のフォルダ直下にあるか。取得失敗・プロパティ未設定は false。
+function isInImageFolder_(fileId) {
+  try {
+    var folderId = PropertiesService.getScriptProperties().getProperty(IMAGE_FOLDER_PROP);
+    if (!folderId) return false;
+    var it = DriveApp.getFileById(String(fileId)).getParents();
+    while (it.hasNext()) { if (it.next().getId() === folderId) return true; }
+  } catch (e) { /* 取得できない → 対象外 */ }
+  return false;
 }
 // id(名刺DBのcontactId) + thumbFileId(既知のDriveファイルID) または thumbB64(未保存のbase64、
 // この場合はここでDriveへ保存してfileIdを得る)を受けて thumbFileId 列に書き込む（backfill用）
@@ -1983,6 +2022,8 @@ function setThumb_(body) {
     var rowIdx = -1;
     for (var i = 0; i < d.rows.length; i++) { if (String(d.rows[i][c['id']]) === id) { rowIdx = i; break; } }
     if (rowIdx < 0) return { ok: false, error: 'not_found' };
+    // 指定された fileId は画像フォルダ内のファイルに限る（任意のDriveファイルを紐付けさせない）
+    if (thumbFileId && !isInImageFolder_(thumbFileId)) return { ok: false, error: 'bad_file' };
     if (!thumbFileId) {
       var thumbName = String((body && body.sourceFile) || id).replace(/\.[^.]+$/, '') + '_thumb.jpg';
       thumbFileId = saveImageFile_(getImageFolder_(), thumbName, thumbB64);
