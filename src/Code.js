@@ -3,8 +3,9 @@
  * ------------------------------------------------------------------
  * データ: 非公開スプレッドシート
  * 画面 : GitHub Pages(公開・ガワのみ) から ID/パス付きで本APIを呼ぶ
- * 認証 : スクリプトプロパティ APP_USER / APP_PASS でサーバー側照合
- * → 正しいID/パスが無い限り、データは1件も返さない
+ * 認証 : 端末トークン(login で発行)が基本。ID/パスは login と ping のみ有効で、10回失敗で15分ロック。
+ *        ingest.py は専用キー INGEST_KEY で取込系 action のみ許可（移行期間は INGEST_KEY 未設定ならID/パスも可）
+ * → 正しい認証が無い限り、データは1件も返さない
  * 公開領域(GitHub)には個人情報・パスワードを一切置かない設計。
  * ------------------------------------------------------------------
  */
@@ -14,6 +15,10 @@ var SPREADSHEET_ID = '1gy6viELdXZnGWcNbPGqKmdJjrrteBE7dI1RhS-r8OVY'; // 名刺�
 var SHEET_NAME = '名刺DB';
 var RESULT_LIMIT = 200;
 var PAGES_URL = 'https://tokyoflower.github.io/meishi-search/'; // 検索画面(GitHub Pages)
+// ID/パス認証のロック（総当たり対策）と、取込専用キー(INGEST_KEY)で許可する action
+var INGEST_ACTIONS = ['addCard', 'attachImages', 'setThumb', 'cardsWithoutImage', 'cardsWithoutThumb', 'ping'];
+var PW_FAIL_MAX = 10, PW_LOCK_SEC = 900;
+var PW_FAIL_KEY = 'pwfail', PW_LOCK_KEY = 'pwlock';
 var HEADER = ['id', '会社名', '部署名', '役職', '役職レベル', '氏名', '姓', '名', '業種',
   'メール', '郵便番号', '都道府県', '市区町村', '住所', '会社TEL', '携帯', 'Fax', 'URL',
   '名刺交換日', '取込日'];
@@ -84,9 +89,9 @@ function doGet(e) {
 
 // GitHub Pages からの API 本体（ID/パス照合 → データ）
 function doPost(e) {
-  var out;
+  var out, body;
   try {
-    var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     var authRes = authAny_(body);
     if (!authRes.ok) {
       Utilities.sleep(800); // 総当たり対策の軽い遅延
@@ -179,7 +184,9 @@ function doPost(e) {
       out = { ok: false, error: 'unknown_action' };
     }
   } catch (err) {
-    out = { ok: false, error: String(err) };
+    // 例外の中身（シート名・スタック等）は応答に出さずログにだけ残す
+    Logger.log('doPost: ' + (body && body.action) + ' ' + (err && err.stack ? err.stack : err));
+    out = { ok: false, error: 'server_error' };
   }
   return ContentService.createTextOutput(JSON.stringify(out))
     .setMimeType(ContentService.MimeType.JSON);
@@ -193,10 +200,38 @@ function authOk_(user, pass) {
   return String(user || '') === String(U || '') && String(pass || '') === String(P);
 }
 
-// token があればデバイストークン認証、無ければ従来の user/pass 直送方式（後方互換）
+// 1) token があればデバイストークン認証（ロック対象外）
+// 2) INGEST_KEY 一致なら INGEST_ACTIONS のみ許可（ロック対象外）
+// 3) ID/パス: login と ping のみ（INGEST_KEY 未設定の移行期間は INGEST_ACTIONS も）。失敗10回で15分ロック
 function authAny_(body) {
   if (body && body.token) return auth_(body);
-  return authOk_(body && body.user, body && body.pass) ? { ok: true } : { ok: false, error: 'auth' };
+  var b = body || {};
+  var action = String(b.action || '');
+  var props = PropertiesService.getScriptProperties();
+  var ingestKey = props.getProperty('INGEST_KEY');
+  if (ingestKey && typeof b.ingestKey === 'string' && b.ingestKey === ingestKey) {
+    return INGEST_ACTIONS.indexOf(action) >= 0 ? { ok: true } : { ok: false, error: 'auth' };
+  }
+  if (!b.user && !b.pass) return { ok: false, error: 'auth' }; // 認証情報なしは数えない
+  var cache = CacheService.getScriptCache();
+  if (cache.get(PW_LOCK_KEY)) return { ok: false, error: 'locked' };
+  if (!authOk_(b.user, b.pass)) {
+    var n = (parseInt(cache.get(PW_FAIL_KEY), 10) || 0) + 1;
+    cache.put(PW_FAIL_KEY, String(n), PW_LOCK_SEC);
+    if (n >= PW_FAIL_MAX) cache.put(PW_LOCK_KEY, '1', PW_LOCK_SEC);
+    return { ok: false, error: 'auth' };
+  }
+  cache.remove(PW_FAIL_KEY);
+  var allowed = action === 'login' || action === 'ping' || (!ingestKey && INGEST_ACTIONS.indexOf(action) >= 0);
+  return allowed ? { ok: true } : { ok: false, error: 'auth' };
+}
+// ID/パスのロックを手動解除（GASエディタから実行）
+function unlockPasswordLogin() {
+  var cache = CacheService.getScriptCache();
+  cache.remove(PW_FAIL_KEY);
+  cache.remove(PW_LOCK_KEY);
+  Logger.log('ID/パスのロックを解除しました');
+  return 'ok';
 }
 
 /* ---- デバイストークン（Eight風UI: 永続ログイン） ---- */
@@ -2287,7 +2322,6 @@ function snsDetectFromSite_(input) {
   try {
     var resp = UrlFetchApp.fetch(siteUrl, {
       muteHttpExceptions: true, followRedirects: true,
-      validateHttpsCertificates: false,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     var code = resp.getResponseCode();

@@ -78,7 +78,14 @@ let fails = 0;
 const check = (name, ok, detail) => { if (!ok) fails++; console.log((ok ? 'OK  ' : 'NG  ') + name + (ok ? '' : ' -> ' + detail)); };
 const JPG = Buffer.from('fakejpeg').toString('base64');
 props.APP_USER = 'u'; props.APP_PASS = 'p'; props.ANTHROPIC_API_KEY = 'sk-test';
-const post = (o) => JSON.parse(g.doPost({ postData: { contents: JSON.stringify(Object.assign({ user: 'u', pass: 'p' }, o)) } }));
+// ID/パスは login と ping のみ有効なため、login で得た端末トークンを載せて呼ぶ（login 自体は ID/パス）
+let _tok = null;
+const post = (o) => {
+  const send = (x) => JSON.parse(g.doPost({ postData: { contents: JSON.stringify(x) } }));
+  if (o.action === 'login') return send(Object.assign({ user: 'u', pass: 'p' }, o));
+  if (!_tok) _tok = send({ user: 'u', pass: 'p', action: 'login', deviceLabel: 'harness' }).data.token;
+  return send(Object.assign({ token: _tok }, o));
+};
 
 // 0) 未セットアップ
 check('setup前は not_setup', post({ action: 'scanCard', clientId: 'x', front: JPG }).error === 'not_setup', '');
