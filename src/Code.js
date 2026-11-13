@@ -238,6 +238,13 @@ function unlockPasswordLogin() {
 function ensureDevicesSheet_() {
   return ensureSheetWithHeader_(DEVICES_SHEET, DEVICES_HEADER).sheet;
 }
+// 数式インジェクション対策: 文字列が = + - @ タブ 改行 で始まるとスプレッドシートが数式として解釈するため、
+// 先頭に ' を付けてテキスト扱いにする。文字列以外（数値・真偽値・Date・null）と空文字はそのまま返す。
+function safeCell_(v) {
+  if (typeof v !== 'string' || v === '') return v;
+  var ch = v.charAt(0);
+  return (ch === '=' || ch === '+' || ch === '-' || ch === '@' || ch === '\t' || ch === '\r' || ch === '\n') ? "'" + v : v;
+}
 function sha256Hex_(s) {
   var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s || ''), Utilities.Charset.UTF_8);
   return bytes.map(function (b) {
@@ -270,7 +277,7 @@ function login_(body) {
   var token = genDeviceToken_();
   var sh = ensureDevicesSheet_();
   var now = nowStamp_();
-  sh.appendRow([sha256Hex_(token), label, now, now, false]);
+  sh.appendRow([sha256Hex_(token), safeCell_(label), now, now, false]);
   return { ok: true, data: { token: token } };
 }
 // action=logout: 該当行を revoked=true に
@@ -477,7 +484,7 @@ function historyDateFields_() { return ['contactDate', 'followDate', 'createdAt'
 // header順の1行を書き込む。日付列は書式を'@'(プレーンテキスト)にしてから setValues することで
 // '2026-09-08' 等の文字列がDateへ自動変換されるのを防ぐ。
 function writeSheetRow_(sheet, header, rowNum, record, dateFields) {
-  var values = header.map(function (h) { return record.hasOwnProperty(h) ? record[h] : ''; });
+  var values = header.map(function (h) { return safeCell_(record.hasOwnProperty(h) ? record[h] : ''); });
   dateFields.forEach(function (f) {
     var idx = header.indexOf(f);
     if (idx >= 0) sheet.getRange(rowNum, idx + 1).setNumberFormat('@');
@@ -714,7 +721,7 @@ function importEightCsv(fileId) {
     };
     append.push(header.map(function (h) {
       var key2 = String(h).trim();
-      return record.hasOwnProperty(key2) ? record[key2] : '';
+      return safeCell_(record.hasOwnProperty(key2) ? record[key2] : '');
     }));
   }
   if (append.length) sh.getRange(sh.getLastRow() + 1, 1, append.length, header.length).setValues(append);
@@ -1002,7 +1009,8 @@ function addCardToSheet(card) {
 
     var row = header.map(function (h) {
       var key = String(h).trim();
-      return record.hasOwnProperty(key) ? record[key] : '';
+      var val = record.hasOwnProperty(key) ? record[key] : '';
+      return key === THUMB_COL ? val : safeCell_(val); // Drive の fileId（システム値）以外はユーザー入力・OCR結果
     });
 
     var newRowNum = sh.getLastRow() + 1;
@@ -2204,7 +2212,7 @@ function bulkContactApply_(input) {
       if (existingKeys[key]) { skippedDupCount++; return; }
       existingKeys[key] = true;
       var record = { contactId: id, contactDate: iso, eventName: eventName, contactType: '名刺交換', memo: '', followUp: false, followDate: '', createdAt: now };
-      appendRows.push(header.map(function (h) { return record.hasOwnProperty(h) ? record[h] : ''; }));
+      appendRows.push(header.map(function (h) { return safeCell_(record.hasOwnProperty(h) ? record[h] : ''); }));
       createdHistoryCount++;
     });
     if (appendRows.length) {
@@ -3096,6 +3104,7 @@ function getDraft_(draftId) {
   var d = readSheet_(DRAFTS_SHEET), i = findDraftIdx_(d, 'draftId', draftId);
   return i < 0 ? null : draftFromRow_(d.rows[i], d.c);
 }
+var DRAFT_IMAGE_KEYS_ = ['frontImageId', 'backImageId', 'thumbImageId']; // Drive の fileId（システム値）
 // draftId の行の指定列だけ更新（ロック内）。行が無ければ false
 function updateDraft_(draftId, fields) {
   var lock = LockService.getScriptLock();
@@ -3107,7 +3116,7 @@ function updateDraft_(draftId, fields) {
       if (d.c[k] === undefined) return;
       var cell = d.sheet.getRange(i + 2, d.c[k] + 1);
       if (k === 'createdAt' || k === 'exchangeDate') cell.setNumberFormat('@');
-      cell.setValue(fields[k]);
+      cell.setValue(DRAFT_IMAGE_KEYS_.indexOf(k) >= 0 ? fields[k] : safeCell_(fields[k]));
     });
     return true;
   } finally {
@@ -3291,7 +3300,7 @@ function setCardCells_(cardId, values) {
       if (c[k] === undefined) { sh.getRange(1, header.length + 1).setValue(k); header.push(k); c[k] = header.length - 1; }
       var cell = sh.getRange(row, c[k] + 1);
       if (k === '名刺交換日') cell.setNumberFormat('@');
-      cell.setValue(values[k]);
+      cell.setValue(IMAGE_COLS.concat([THUMB_COL]).indexOf(k) >= 0 ? values[k] : safeCell_(values[k])); // fileId 列はシステム値
     });
     return true;
   } finally {
@@ -3367,4 +3376,32 @@ function testScanIdempotency() {
   SCAN_TEST_STUB_ = null;
   Logger.log('testScanIdempotency: ' + (ok ? 'OK（同一clientId 2回で1行）' : 'NG ' + JSON.stringify([r1, r2, idx.length])));
   return ok;
+}
+
+// GASエディタから手動実行: safeCell_ を通した値が数式にならず、元の文字列のまま読めることを一時シートで確認する
+// （A列=書式なし(自動)、B列=書式なしテキスト'@'。名刺交換日などテキスト書式の列でも ' が文字として残らないこと）
+function testFormulaSafe() {
+  var samples = ['=1+1', '+81-90-0000-0000'];
+  var name = '_formula_test_' + Utilities.formatDate(new Date(), 'JST', 'yyyyMMddHHmmss');
+  var sheet = ss_().insertSheet(name);
+  var cells = [];
+  try {
+    sheet.getRange(1, 2, 2, 1).setNumberFormat('@');
+    samples.forEach(function (v, i) {
+      sheet.getRange(i + 1, 1).setValue(safeCell_(v));
+      sheet.getRange(i + 1, 2).setValue(safeCell_(v));
+    });
+    [[1, 1, 'A1 一般'], [2, 1, 'A2 一般'], [1, 2, 'B1 テキスト書式'], [2, 2, 'B2 テキスト書式']].forEach(function (p) {
+      var rg = sheet.getRange(p[0], p[1]);
+      var formula = rg.getFormula(), val = rg.getValue();
+      var ok = formula === '' && val === samples[p[0] - 1];
+      cells.push({ cell: p[2], ok: ok, formula: formula, value: String(val) });
+    });
+  } finally {
+    ss_().deleteSheet(sheet);
+  }
+  var allOk = cells.length === 4 && cells.every(function (x) { return x.ok; });
+  var res = { ok: allOk, cells: cells };
+  Logger.log('testFormulaSafe: ' + (allOk ? 'OK' : 'NG') + ' ' + JSON.stringify(res));
+  return res;
 }
